@@ -1,0 +1,14 @@
+{
+    "database": {
+        "type": "mssql",
+        "sqlite": {},
+        "mssql": {
+            "server": "localhost",
+            "port": 42145,
+            "database": "PhotoQualityAnalyzer",
+            "use_windows_auth": false,
+            "username": "sa",
+            "password": "123"
+        }
+    }
+}
