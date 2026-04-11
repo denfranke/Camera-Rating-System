@@ -1,9 +1,3 @@
-#!/usr/bin/env python3
-"""
-Photo Quality Analyzer - Консольное приложение для анализа качества фотографий
-Поддерживает локальную SQLite и удалённый MS SQL Server
-"""
-
 import os
 import sys
 import json
@@ -15,13 +9,11 @@ from analyzer import ImageAnalyzer
 
 
 def signal_handler(sig, frame):
-    """Обработчик сигнала Ctrl+C"""
     print("\n\n👋 Прерывание работы. До свидания!")
     sys.exit(0)
 
 
 def load_config():
-    """Загружает конфигурацию из файла"""
     config_file = "config.json"
     default_config = {
         "database": {
@@ -45,34 +37,23 @@ def load_config():
             with open(config_file, 'r', encoding='utf-8') as f:
                 return json.load(f)
         except json.JSONDecodeError:
-            print(f"⚠️ Ошибка чтения {config_file}, создаю новый...")
+            print(f"Ошибка чтения {config_file}, создаю новый...")
             with open(config_file, 'w', encoding='utf-8') as f:
                 json.dump(default_config, f, indent=4, ensure_ascii=False)
             return default_config
     else:
         with open(config_file, 'w', encoding='utf-8') as f:
             json.dump(default_config, f, indent=4, ensure_ascii=False)
-        print(f"✅ Создан файл конфигурации: {config_file}")
+        print(f"Создан файл конфигурации: {config_file}")
         return default_config
 
 
 def save_config(config):
-    """Сохраняет конфигурацию"""
     with open("config.json", "w", encoding='utf-8') as f:
         json.dump(config, f, indent=4, ensure_ascii=False)
 
 
 def safe_input(prompt: str, default: str = None) -> str:
-    """
-    Безопасный ввод с обработкой KeyboardInterrupt
-    
-    Args:
-        prompt: Текст приглашения
-        default: Значение по умолчанию (при пустом вводе)
-    
-    Returns:
-        Введённая строка или значение по умолчанию
-    """
     try:
         result = input(prompt).strip()
         if not result and default is not None:
@@ -84,16 +65,6 @@ def safe_input(prompt: str, default: str = None) -> str:
 
 
 def safe_int_input(prompt: str, default: int = None) -> int:
-    """
-    Безопасный ввод целого числа
-    
-    Args:
-        prompt: Текст приглашения
-        default: Значение по умолчанию
-    
-    Returns:
-        Введённое число или None при отмене
-    """
     try:
         result = input(prompt).strip()
         if not result and default is not None:
@@ -103,20 +74,19 @@ def safe_int_input(prompt: str, default: int = None) -> int:
         print("\n")
         return None
     except ValueError:
-        print("❌ Введите число!")
+        print("Введите число!")
         return safe_int_input(prompt, default)
 
 
 def configure_database():
-    """Интерактивная настройка подключения к БД"""
     clear_screen()
     print_header()
-    print("🔧 НАСТРОЙКА ПОДКЛЮЧЕНИЯ К БАЗЕ ДАННЫХ\n")
+    print("НАСТРОЙКА ПОДКЛЮЧЕНИЯ К БАЗЕ ДАННЫХ\n")
     
     print("Выберите тип базы данных:")
-    print(" 1. 📁 Локальная SQLite (просто, не требует сервера)")
-    print(" 2. 🌐 Удалённый MS SQL Server (требует сервер Microsoft SQL Server)")
-    print(" 0. ❌ Отмена")
+    print(" 1. Локальная SQLite (просто, не требует сервера)")
+    print(" 2. Удалённый MS SQL Server (требует сервер Microsoft SQL Server)")
+    print(" 0. Отмена")
     
     choice = safe_input("\nВыберите (0-2): ")
     
@@ -137,17 +107,17 @@ def configure_database():
         }
         save_config(config)
         
-        print(f"\n✅ Конфигурация сохранена. БД: {db_path}")
+        print(f"\nКонфигурация сохранена. БД: {db_path}")
         return Database(db_type="sqlite", db_path=db_path)
     
     elif choice == '2':
-        print("\n🌐 Введите параметры подключения к MS SQL Server:")
+        print("\nВведите параметры подключения к MS SQL Server:")
         
         server = safe_input("Сервер (IP или hostname): ")
         if server is None:
             return None
         if not server:
-            print("❌ Адрес сервера обязателен!")
+            print("Адрес сервера обязателен!")
             safe_input("\nНажмите Enter для продолжения...")
             return None
         
@@ -160,7 +130,7 @@ def configure_database():
         if database is None:
             return None
         if not database:
-            print("❌ Имя базы данных обязательно!")
+            print("Имя базы данных обязательно!")
             safe_input("\nНажмите Enter для продолжения...")
             return None
         
@@ -181,7 +151,7 @@ def configure_database():
             if username is None:
                 return None
             if not username:
-                print("❌ Логин обязателен!")
+                print("Логин обязателен!")
                 safe_input("\nНажмите Enter для продолжения...")
                 return None
             
@@ -205,7 +175,7 @@ def configure_database():
         }
         save_config(config)
         
-        print(f"\n✅ Конфигурация сохранена.")
+        print(f"\nКонфигурация сохранена.")
         
         try:
             db = Database(
@@ -219,12 +189,7 @@ def configure_database():
             )
             return db
         except Exception as e:
-            print(f"❌ Ошибка подключения: {e}")
-            print("\nВозможные причины:")
-            print("  - Сервер недоступен")
-            print("  - Неверные учётные данные")
-            print("  - Не установлен ODBC Driver для SQL Server")
-            print("\nУстановите драйвер: https://learn.microsoft.com/sql/connect/odbc/download-odbc-driver-for-sql-server")
+            print(f"Ошибка подключения: {e}")
             safe_input("\nНажмите Enter для продолжения...")
             return None
     
@@ -232,40 +197,36 @@ def configure_database():
 
 
 def clear_screen():
-    """Очищает экран консоли"""
     os.system('cls' if os.name == 'nt' else 'clear')
 
 
 def print_header():
-    """Выводит заголовок программы"""
     print("=" * 60)
-    print("   📸 PHOTO QUALITY ANALYZER - Анализ качества фотографий")
+    print("   PHOTO QUALITY ANALYZER - Анализ качества фотографий")
     print("=" * 60)
     print()
 
 
 def print_menu(db: Database):
-    """Выводит главное меню"""
-    db_type = "SQLite (локально)" if db.db_type == "sqlite" else "MS SQL Server (удалённо)"
+    db_type = "SQLite" if db.db_type == "sqlite" else "MS SQL Server"
     print("\n" + "-" * 40)
-    print(f"🔌 БД: {db_type}")
+    print(f"БД: {db_type}")
     print("-" * 40)
     print("ГЛАВНОЕ МЕНЮ:")
     print("-" * 40)
-    print(" 1. 📁 Анализировать новое фото")
-    print(" 2. 📋 Показать все фото")
-    print(" 3. 🔍 Поиск по фото")
-    print(" 4. ⭐ Оценить фото")
-    print(" 5. 📊 Показать статистику")
-    print(" 6. 🏷️ Добавить категорию")
-    print(" 7. 🗑️ Удалить фото из БД")
-    print(" 8. 🔧 Сменить БД")
-    print(" 0. 🚪 Выход")
+    print(" 1. Анализировать новое фото")
+    print(" 2. Показать все фото")
+    print(" 3. Поиск по фото")
+    print(" 4. Оценить фото")
+    print(" 5. Показать статистику")
+    print(" 6. Добавить категорию")
+    print(" 7. Удалить фото из БД")
+    print(" 8. Сменить БД")
+    print(" 0. Выход")
     print("-" * 40)
 
 
 def wait_for_enter():
-    """Ожидание нажатия Enter с обработкой прерывания"""
     print("\nНажмите Enter для продолжения...")
     try:
         input()
@@ -276,12 +237,11 @@ def wait_for_enter():
 
 
 def analyze_photo(db: Database, analyzer: ImageAnalyzer):
-    """Анализ нового фото"""
     clear_screen()
     print_header()
-    print("📁 АНАЛИЗ ФОТОГРАФИИ\n")
+    print("АНАЛИЗ ФОТОГРАФИИ\n")
 
-    print(f"🔍 Тип БД: {db.db_type}")
+    print(f"Тип БД: {db.db_type}")
     
     file_path = safe_input("Введите путь к фото: ")
     
@@ -291,56 +251,56 @@ def analyze_photo(db: Database, analyzer: ImageAnalyzer):
     file_path = file_path.strip('"').strip("'")
     
     if not file_path:
-        print("❌ Путь не указан!")
+        print("Путь не указан!")
         wait_for_enter()
         return
     
     if not os.path.exists(file_path):
-        print(f"❌ Файл не найден: {file_path}")
+        print(f"Файл не найден: {file_path}")
         wait_for_enter()
         return
     
-    print(f"\n🔄 Анализ: {os.path.basename(file_path)}")
-    print("⏳ Пожалуйста, подождите...\n")
+    print(f"\nАнализ: {os.path.basename(file_path)}")
+    print("Пожалуйста, подождите...\n")
     
     try:
         result = analyzer.analyze(file_path)
         analysis_id = db.save_analysis(result)
         
-        print("✅ Анализ завершен!\n")
+        print("Анализ завершен!\n")
         print("=" * 50)
-        print("📊 РЕЗУЛЬТАТЫ АНАЛИЗА:")
+        print("РЕЗУЛЬТАТЫ АНАЛИЗА:")
         print("=" * 50)
         
         overall = result.get('overall_score', 0)
         if overall >= 80:
-            rating = "🌟 ОТЛИЧНО"
+            rating = "ОТЛИЧНО"
         elif overall >= 60:
-            rating = "👍 ХОРОШО"
+            rating = "ХОРОШО"
         elif overall >= 40:
-            rating = "📷 СРЕДНЕ"
+            rating = "СРЕДНЕ"
         else:
-            rating = "⚠️ ПЛОХО"
+            rating = "ПЛОХО"
         
         print(f"  ID в базе: {analysis_id}")
         print(f"  Файл: {result.get('filename', 'Unknown')}")
         print(f"  Общая оценка: {overall:.1f}/100 {rating}")
         print()
         print("  Метрики качества:")
-        print(f"    🔍 Резкость: {result.get('sharpness_score', 0):.1f}")
-        print(f"    🔊 Шум: {result.get('noise_level', 0):.1f}")
-        print(f"    ☀️ Динамический диапазон: {result.get('dynamic_range', 0):.1f} EV")
-        print(f"    💡 Яркость: {result.get('brightness', 0):.2f}")
-        print(f"    🎨 Насыщенность: {result.get('saturation', 0):.2f}")
+        print(f"    Резкость: {result.get('sharpness_score', 0):.1f}")
+        print(f"    Шум: {result.get('noise_level', 0):.1f}")
+        print(f"    Динамический диапазон: {result.get('dynamic_range', 0):.1f} EV")
+        print(f"    Яркость: {result.get('brightness', 0):.2f}")
+        print(f"    Насыщенность: {result.get('saturation', 0):.2f}")
         print()
         
         if result.get('camera_model'):
             print("  Информация о камере:")
-            print(f"    📷 Модель: {result.get('camera_model', 'N/A')}")
-            print(f"    ⚡ ISO: {result.get('iso', 'N/A')}")
-            print(f"    🎞️ Выдержка: {result.get('exposure_time', 'N/A')}")
-            print(f"    🔭 Диафрагма: {result.get('aperture', 'N/A')}")
-            print(f"    📏 Фокусное: {result.get('focal_length', 'N/A')}mm")
+            print(f"    Модель: {result.get('camera_model', 'N/A')}")
+            print(f"    ISO: {result.get('iso', 'N/A')}")
+            print(f"    Выдержка: {result.get('exposure_time', 'N/A')}")
+            print(f"    Диафрагма: {result.get('aperture', 'N/A')}")
+            print(f"    Фокусное: {result.get('focal_length', 'N/A')}mm")
             print()
         
         print(f"  Размер: {result.get('image_width', 0)}x{result.get('image_height', 0)} px")
@@ -348,26 +308,25 @@ def analyze_photo(db: Database, analyzer: ImageAnalyzer):
         print("=" * 50)
         
     except Exception as e:
-        print(f"❌ Ошибка при анализе: {str(e)}")
+        print(f"Ошибка при анализе: {str(e)}")
     
     wait_for_enter()
 
 
 def list_photos(db: Database):
-    """Показывает список всех фото"""
     clear_screen()
     print_header()
-    print("📋 СПИСОК ВСЕХ ФОТОГРАФИЙ\n")
+    print("СПИСОК ВСЕХ ФОТОГРАФИЙ\n")
     
     try:
         analyses = db.get_all_analyses(limit=100)
     except Exception as e:
-        print(f"❌ Ошибка получения данных: {e}")
+        print(f"Ошибка получения данных: {e}")
         wait_for_enter()
         return
     
     if not analyses:
-        print("📭 В базе данных нет фотографий.")
+        print("В базе данных нет фотографий.")
     else:
         print(f"Всего фото: {len(analyses)}\n")
         print("-" * 110)
@@ -405,10 +364,9 @@ def list_photos(db: Database):
 
 
 def search_photos(db: Database):
-    """Поиск фото"""
     clear_screen()
     print_header()
-    print("🔍 ПОИСК ФОТОГРАФИЙ\n")
+    print("ПОИСК ФОТОГРАФИЙ\n")
     
     query = safe_input("Введите поисковый запрос: ")
     
@@ -416,28 +374,28 @@ def search_photos(db: Database):
         return
     
     if not query:
-        print("❌ Запрос не может быть пустым!")
+        print("Запрос не может быть пустым!")
         wait_for_enter()
         return
     
     try:
         results = db.search_photos(query)
     except Exception as e:
-        print(f"❌ Ошибка поиска: {e}")
+        print(f"Ошибка поиска: {e}")
         wait_for_enter()
         return
     
     clear_screen()
     print_header()
-    print(f"🔍 РЕЗУЛЬТАТЫ ПОИСКА: '{query}'\n")
+    print(f"РЕЗУЛЬТАТЫ ПОИСКА: '{query}'\n")
     
     if not results:
-        print("📭 Фотографии не найдены.")
+        print("Фотографии не найдены.")
     else:
         print(f"Найдено фото: {len(results)}\n")
         for r in results:
-            stars = "⭐" * (r.get('user_rating') or 0) + "☆" * (5 - (r.get('user_rating') or 0))
-            print(f"📸 [{r['id']}] {r['filename']}")
+            stars = "[*]" * (r.get('user_rating') or 0) + "[ ]" * (5 - (r.get('user_rating') or 0))
+            print(f"[{r['id']}] {r['filename']}")
             print(f"   Оценка: {r.get('overall_score', 0):.0f}% | {stars}")
             print(f"   Теги: {r.get('user_tags', '-')}")
             print()
@@ -446,10 +404,9 @@ def search_photos(db: Database):
 
 
 def rate_photo(db: Database):
-    """Оценка фото пользователем"""
     clear_screen()
     print_header()
-    print("⭐ ОЦЕНКА ФОТОГРАФИИ\n")
+    print("ОЦЕНКА ФОТОГРАФИИ\n")
     
     photo_id = safe_int_input("Введите ID фото: ")
     
@@ -459,17 +416,17 @@ def rate_photo(db: Database):
     try:
         photo = db.get_analysis(photo_id)
     except Exception as e:
-        print(f"❌ Ошибка: {e}")
+        print(f"Ошибка: {e}")
         wait_for_enter()
         return
     
     if not photo:
-        print(f"❌ Фото с ID {photo_id} не найдено!")
+        print(f"Фото с ID {photo_id} не найдено!")
         wait_for_enter()
         return
     
-    print(f"\n📸 Фото: {photo['filename']}")
-    print(f"📊 Текущая оценка: {photo.get('overall_score', 0):.0f}%\n")
+    print(f"\nФото: {photo['filename']}")
+    print(f"Текущая оценка: {photo.get('overall_score', 0):.0f}%\n")
     
     rating = safe_int_input("Ваша оценка (1-5): ")
     
@@ -477,7 +434,7 @@ def rate_photo(db: Database):
         return
     
     if rating < 1 or rating > 5:
-        print("❌ Оценка от 1 до 5!")
+        print("Оценка от 1 до 5!")
         wait_for_enter()
         return
     
@@ -491,34 +448,33 @@ def rate_photo(db: Database):
     
     try:
         db.update_rating(photo_id, rating, notes if notes else None, tags if tags else None)
-        print("\n✅ Оценка сохранена!")
+        print("\nОценка сохранена!")
     except Exception as e:
-        print(f"\n❌ Ошибка сохранения: {e}")
+        print(f"\nОшибка сохранения: {e}")
     
     wait_for_enter()
 
 
 def show_statistics(db: Database):
-    """Показывает статистику"""
     clear_screen()
     print_header()
-    print("📊 СТАТИСТИКА ПО ФОТОГРАФИЯМ\n")
+    print("СТАТИСТИКА ПО ФОТОГРАФИЯМ\n")
     
     try:
         stats = db.get_statistics()
     except Exception as e:
-        print(f"❌ Ошибка получения статистики: {e}")
+        print(f"Ошибка получения статистики: {e}")
         wait_for_enter()
         return
     
     print("=" * 50)
     print("ОБЩАЯ СТАТИСТИКА:")
     print("=" * 50)
-    print(f"  📸 Всего фото: {stats.get('total_photos', 0)}")
-    print(f"  🎯 Средняя общая оценка: {stats.get('avg_overall_score', 0):.1f}/100")
-    print(f"  🔍 Средняя резкость: {stats.get('avg_sharpness', 0):.1f}")
-    print(f"  🔊 Средний уровень шума: {stats.get('avg_noise', 0):.1f}")
-    print(f"  ⭐ Средняя оценка пользователя: {stats.get('avg_user_rating', 0):.1f}/5")
+    print(f"Всего фото: {stats.get('total_photos', 0)}")
+    print(f"Средняя общая оценка: {stats.get('avg_overall_score', 0):.1f}/100")
+    print(f"Средняя резкость: {stats.get('avg_sharpness', 0):.1f}")
+    print(f"Средний уровень шума: {stats.get('avg_noise', 0):.1f}")
+    print(f"Средняя оценка пользователя: {stats.get('avg_user_rating', 0):.1f}/5")
     
     if stats.get('top_cameras'):
         print("\n" + "=" * 50)
@@ -532,10 +488,9 @@ def show_statistics(db: Database):
 
 
 def add_category(db: Database):
-    """Добавляет новую категорию"""
     clear_screen()
     print_header()
-    print("🏷️ ДОБАВЛЕНИЕ КАТЕГОРИИ\n")
+    print("ДОБАВЛЕНИЕ КАТЕГОРИИ\n")
     
     name = safe_input("Название категории: ")
     
@@ -543,7 +498,7 @@ def add_category(db: Database):
         return
     
     if not name:
-        print("❌ Название не может быть пустым!")
+        print("Название не может быть пустым!")
         wait_for_enter()
         return
     
@@ -554,14 +509,14 @@ def add_category(db: Database):
     try:
         category_id = db.add_category(name, description or "")
     except Exception as e:
-        print(f"❌ Ошибка: {e}")
+        print(f"Ошибка: {e}")
         wait_for_enter()
         return
     
     if category_id:
-        print(f"\n✅ Категория '{name}' добавлена! ID: {category_id}")
+        print(f"\nКатегория '{name}' добавлена! ID: {category_id}")
     else:
-        print(f"\n⚠️ Категория '{name}' уже существует или произошла ошибка.")
+        print(f"\nКатегория '{name}' уже существует или произошла ошибка.")
     
     confirm = safe_input("\nДобавить фото в категорию? (да/нет): ")
     if confirm and confirm.lower() in ['да', 'yes', 'y', 'д']:
@@ -569,18 +524,17 @@ def add_category(db: Database):
         if photo_id:
             try:
                 db.add_photo_to_category(photo_id, category_id)
-                print("✅ Фото добавлено в категорию!")
+                print("Фото добавлено в категорию!")
             except Exception as e:
-                print(f"❌ Ошибка: {e}")
+                print(f"Ошибка: {e}")
     
     wait_for_enter()
 
 
 def delete_photo(db: Database):
-    """Удаляет фото из базы данных"""
     clear_screen()
     print_header()
-    print("🗑️ УДАЛЕНИЕ ФОТОГРАФИИ\n")
+    print("УДАЛЕНИЕ ФОТОГРАФИИ\n")
     
     photo_id = safe_int_input("Введите ID фото: ")
     
@@ -590,32 +544,31 @@ def delete_photo(db: Database):
     try:
         photo = db.get_analysis(photo_id)
     except Exception as e:
-        print(f"❌ Ошибка: {e}")
+        print(f"Ошибка: {e}")
         wait_for_enter()
         return
     
     if not photo:
-        print(f"❌ Фото с ID {photo_id} не найдено!")
+        print(f"Фото с ID {photo_id} не найдено!")
         wait_for_enter()
         return
     
-    print(f"\n📸 Фото: {photo['filename']}")
-    confirm = safe_input("\n⚠️ Удалить? (да/нет): ")
+    print(f"\nФото: {photo['filename']}")
+    confirm = safe_input("\nУдалить? (да/нет): ")
     
     if confirm and confirm.lower() in ['да', 'yes', 'y', 'д']:
         try:
             db.delete_analysis(photo_id)
-            print("\n✅ Фото удалено!")
+            print("\nФото удалено!")
         except Exception as e:
-            print(f"\n❌ Ошибка удаления: {e}")
+            print(f"\nОшибка удаления: {e}")
     else:
-        print("\n❌ Отменено")
+        print("\nОтменено")
     
     wait_for_enter()
 
 
 def main():
-    """Главная функция"""
     # Устанавливаем обработчик сигналов
     signal.signal(signal.SIGINT, signal_handler)
     
@@ -643,7 +596,7 @@ def main():
                 use_windows_auth=mssql_config.get('use_windows_auth', True)
             )
     except Exception as e:
-        print(f"⚠️ Ошибка подключения: {e}")
+        print(f"Ошибка подключения: {e}")
         db = configure_database()
     
     while True:
@@ -682,10 +635,9 @@ def main():
         elif choice == '0':
             db.close()
             clear_screen()
-            print("\n👋 До свидания!\n")
             sys.exit(0)
         else:
-            print("\n❌ Неверный выбор! Введите число от 0 до 8.")
+            print("\nОшибка, введите число от 0 до 8.")
             wait_for_enter()
 
 

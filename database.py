@@ -1,13 +1,9 @@
-"""
-database.py - Работа с базой данных (SQLite локально или MS SQL Server удалённо)
-"""
-
 import os
 from datetime import datetime
 from typing import List, Dict, Optional, Any
 from abc import ABC, abstractmethod
+import sqlite3
 
-# Пробуем импортировать pyodbc для MS SQL Server
 try:
     import pyodbc
     PYODBC_AVAILABLE = True
@@ -18,7 +14,6 @@ except ImportError:
 import numpy as np
 
 def convert_numpy_types(obj):
-    """Рекурсивно конвертирует numpy типы в стандартные Python типы"""
     if obj is None:
         return None
     elif isinstance(obj, (np.float32, np.float64)):
@@ -33,9 +28,7 @@ def convert_numpy_types(obj):
         return [convert_numpy_types(item) for item in obj]
     return obj
 
-class DatabaseInterface(ABC):
-    """Абстрактный интерфейс для работы с БД"""
-    
+class DatabaseInterface(ABC):    
     @abstractmethod
     def save_analysis(self, data: Dict[str, Any]) -> int:
         pass
@@ -69,21 +62,15 @@ class DatabaseInterface(ABC):
         pass
 
 
-class SQLiteDatabase(DatabaseInterface):
-    """SQLite локальная база данных"""
-    
+class SQLiteDatabase(DatabaseInterface):    
     def __init__(self, db_path: str = "photo_analysis.db"):
-        import sqlite3
         self.db_path = db_path
         self._init_database()
     
     def _connect(self):
-        import sqlite3
         return sqlite3.connect(self.db_path)
     
     def _init_database(self):
-        import sqlite3
-        
         with self._connect() as conn:
             cursor = conn.cursor()
             
@@ -140,10 +127,9 @@ class SQLiteDatabase(DatabaseInterface):
             """)
             
             conn.commit()
-            print("✅ SQLite база данных инициализирована")
+            print("SQLite база данных инициализирована")
     
     def save_analysis(self, data: Dict[str, Any]) -> int:
-        import sqlite3
         now = datetime.now().isoformat()
         
         with self._connect() as conn:
@@ -173,8 +159,6 @@ class SQLiteDatabase(DatabaseInterface):
             return analysis_id
     
     def get_analysis(self, analysis_id: int) -> Optional[Dict[str, Any]]:
-        import sqlite3
-        
         with self._connect() as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
@@ -183,8 +167,6 @@ class SQLiteDatabase(DatabaseInterface):
             return dict(row) if row else None
     
     def get_all_analyses(self, limit: int = 100, offset: int = 0, sort_by: str = "analyzed_at") -> List[Dict[str, Any]]:
-        import sqlite3
-        
         with self._connect() as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
@@ -198,8 +180,6 @@ class SQLiteDatabase(DatabaseInterface):
             return [dict(row) for row in cursor.fetchall()]
     
     def update_rating(self, analysis_id: int, rating: int, notes: str = None, tags: str = None):
-        import sqlite3
-        
         with self._connect() as conn:
             cursor = conn.cursor()
             updates = {"user_rating": rating, "updated_at": datetime.now().isoformat()}
@@ -213,8 +193,6 @@ class SQLiteDatabase(DatabaseInterface):
             conn.commit()
     
     def delete_analysis(self, analysis_id: int):
-        import sqlite3
-        
         with self._connect() as conn:
             cursor = conn.cursor()
             cursor.execute("DELETE FROM photo_categories WHERE photo_id = ?", (analysis_id,))
@@ -222,8 +200,6 @@ class SQLiteDatabase(DatabaseInterface):
             conn.commit()
     
     def get_statistics(self) -> Dict[str, Any]:
-        import sqlite3
-        
         with self._connect() as conn:
             cursor = conn.cursor()
             
@@ -251,9 +227,7 @@ class SQLiteDatabase(DatabaseInterface):
             
             return stats
     
-    def add_category(self, name: str, description: str = "") -> Optional[int]:
-        import sqlite3
-        
+    def add_category(self, name: str, description: str = "") -> Optional[int]:        
         with self._connect() as conn:
             cursor = conn.cursor()
             try:
@@ -266,17 +240,13 @@ class SQLiteDatabase(DatabaseInterface):
             except sqlite3.IntegrityError:
                 return None
     
-    def add_photo_to_category(self, photo_id: int, category_id: int):
-        import sqlite3
-        
+    def add_photo_to_category(self, photo_id: int, category_id: int):       
         with self._connect() as conn:
             cursor = conn.cursor()
             cursor.execute("INSERT OR IGNORE INTO photo_categories (photo_id, category_id) VALUES (?, ?)", (photo_id, category_id))
             conn.commit()
     
-    def search_photos(self, query: str) -> List[Dict[str, Any]]:
-        import sqlite3
-        
+    def search_photos(self, query: str) -> List[Dict[str, Any]]:      
         with self._connect() as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
@@ -293,8 +263,6 @@ class SQLiteDatabase(DatabaseInterface):
 
 
 class MSSQLDatabase(DatabaseInterface):
-    """Microsoft SQL Server удалённая база данных"""
-    
     def __init__(self, server: str, database: str, username: str = None, password: str = None, 
                  use_windows_auth: bool = True, port: int = 1433):
         if not PYODBC_AVAILABLE:
@@ -310,7 +278,6 @@ class MSSQLDatabase(DatabaseInterface):
         self._init_database()
     
     def _get_connection_string(self) -> str:
-        """Формирует строку подключения"""
         driver = "{ODBC Driver 17 for SQL Server}"
         
         if self.use_windows_auth:
@@ -327,18 +294,15 @@ class MSSQLDatabase(DatabaseInterface):
         return conn_str
     
     def _get_connection(self):
-        """Получает соединение с БД"""
         if self.conn is None:
             conn_str = self._get_connection_string()
             self.conn = pyodbc.connect(conn_str)
         return self.conn
     
     def _init_database(self):
-        """Инициализация таблиц в MS SQL Server"""
         conn = self._get_connection()
         cursor = conn.cursor()
         
-        # Создаём таблицы если их нет
         cursor.execute("""
             IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='analysis_results' AND xtype='U')
             CREATE TABLE analysis_results (
@@ -397,16 +361,14 @@ class MSSQLDatabase(DatabaseInterface):
         """)
         
         conn.commit()
-        print("✅ База данных MS SQL Server инициализирована")
+        print("База данных MS SQL Server инициализирована")
     
     def save_analysis(self, data: Dict[str, Any]) -> int:
         conn = self._get_connection()
         cursor = conn.cursor()
         
-        # Конвертируем numpy типы
         data = convert_numpy_types(data)
         
-        # Очищаем данные и форматируем даты правильно
         cleaned_data = {}
         for key, value in data.items():
             if value is None:
@@ -421,12 +383,10 @@ class MSSQLDatabase(DatabaseInterface):
             elif isinstance(value, (str, bool)):
                 cleaned_data[key] = value
             elif 'date' in key.lower() or 'time' in key.lower():
-                # Для дат используем правильный формат
                 cleaned_data[key] = value.replace('T', ' ') if value else None
             else:
                 cleaned_data[key] = value
         
-        # Проверяем существует ли запись
         cursor.execute("SELECT id FROM analysis_results WHERE file_path = ?", (cleaned_data['file_path'],))
         existing = cursor.fetchone()
         
@@ -434,7 +394,6 @@ class MSSQLDatabase(DatabaseInterface):
             analysis_id = existing[0]
             cleaned_data['updated_at'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             
-            # Удаляем ключи, которые не должны обновляться
             if 'created_at' in cleaned_data:
                 del cleaned_data['created_at']
             if 'id' in cleaned_data:
@@ -454,7 +413,6 @@ class MSSQLDatabase(DatabaseInterface):
             placeholders = ", ".join(["?"] * len(cleaned_data))
             cursor.execute(f"INSERT INTO analysis_results ({columns}) VALUES ({placeholders})", list(cleaned_data.values()))
             
-            # Получаем последний ID безопасно
             cursor.execute("SELECT SCOPE_IDENTITY()")
             row = cursor.fetchone()
             analysis_id = int(row[0]) if row and row[0] is not None else 0
@@ -581,16 +539,12 @@ class MSSQLDatabase(DatabaseInterface):
     def close(self):
         if self.conn:
             self.conn.close()
-            print("🔌 Соединение с MS SQL Server закрыто")
+            print("Соединение с MS SQL Server закрыто")
 
 
-class Database:
-    """Фасад для работы с БД (поддерживает SQLite и MS SQL Server)"""
-    
+class Database:   
     def __init__(self, db_type: str = "sqlite", **kwargs):
-        """
-        Инициализация БД
-        
+        """        
         Args:
             db_type: "sqlite" или "mssql"
             Для SQLite: db_path
@@ -601,7 +555,7 @@ class Database:
         if db_type == "sqlite":
             db_path = kwargs.get('db_path', "photo_analysis.db")
             self._db = SQLiteDatabase(db_path)
-            print(f"📁 Подключена локальная SQLite БД: {db_path}")
+            print(f"Подключена локальная SQLite БД: {db_path}")
         elif db_type == "mssql":
             if not PYODBC_AVAILABLE:
                 raise ImportError("pyodbc не установлен. Установите: pip install pyodbc")
@@ -615,7 +569,7 @@ class Database:
             
             self._db = MSSQLDatabase(server, database, username, password, use_windows_auth, port)
             auth_type = "Windows аутентификация" if use_windows_auth else f"аутентификация SQL Server ({username})"
-            print(f"🌐 Подключена удалённая MS SQL Server БД: {server}:{port}/{database} ({auth_type})")
+            print(f"Подключена удалённая MS SQL Server БД: {server}:{port}/{database} ({auth_type})")
         else:
             raise ValueError(f"Неизвестный тип БД: {db_type}")
     
