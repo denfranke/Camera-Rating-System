@@ -3,7 +3,7 @@
         "type": "mssql",
         "sqlite": {},
         "mssql": {
-            "server": "localhost",
+            "server": "172.23.48.78",
             "port": 42145,
             "database": "PhotoQualityAnalyzer",
             "use_windows_auth": false,

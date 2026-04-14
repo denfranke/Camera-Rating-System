@@ -102,10 +102,7 @@ class SQLiteDatabase(DatabaseInterface):
                     iso INTEGER,
                     exposure_time TEXT,
                     aperture REAL,
-                    focal_length REAL,
-                    created_at TIMESTAMP,
-                    analyzed_at TIMESTAMP,
-                    updated_at TIMESTAMP
+                    focal_length REAL
                 )
             """)
             
@@ -113,8 +110,7 @@ class SQLiteDatabase(DatabaseInterface):
                 CREATE TABLE IF NOT EXISTS categories (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     name TEXT UNIQUE NOT NULL,
-                    description TEXT,
-                    created_at TIMESTAMP
+                    description TEXT
                 )
             """)
             
@@ -130,29 +126,24 @@ class SQLiteDatabase(DatabaseInterface):
             print("SQLite база данных инициализирована")
     
     def save_analysis(self, data: Dict[str, Any]) -> int:
-        now = datetime.now().isoformat()
-        
         with self._connect() as conn:
             cursor = conn.cursor()
             
             cursor.execute("SELECT id FROM analysis_results WHERE file_path = ?", (data['file_path'],))
             existing = cursor.fetchone()
             
+            # Удаляем поля с датами если они есть
+            save_data = {k: v for k, v in data.items() }
+            
             if existing:
                 analysis_id = existing[0]
-                data['updated_at'] = now
-                
-                set_clause = ", ".join([f"{k} = ?" for k in data.keys()])
-                values = list(data.values()) + [analysis_id]
+                set_clause = ", ".join([f"{k} = ?" for k in save_data.keys()])
+                values = list(save_data.values()) + [analysis_id]
                 cursor.execute(f"UPDATE analysis_results SET {set_clause} WHERE id = ?", values)
             else:
-                data['created_at'] = now
-                data['analyzed_at'] = now
-                data['updated_at'] = now
-                
-                columns = ", ".join(data.keys())
-                placeholders = ", ".join(["?"] * len(data))
-                cursor.execute(f"INSERT INTO analysis_results ({columns}) VALUES ({placeholders})", list(data.values()))
+                columns = ", ".join(save_data.keys())
+                placeholders = ", ".join(["?"] * len(save_data))
+                cursor.execute(f"INSERT INTO analysis_results ({columns}) VALUES ({placeholders})", list(save_data.values()))
                 analysis_id = cursor.lastrowid
             
             conn.commit()
@@ -166,13 +157,13 @@ class SQLiteDatabase(DatabaseInterface):
             row = cursor.fetchone()
             return dict(row) if row else None
     
-    def get_all_analyses(self, limit: int = 100, offset: int = 0, sort_by: str = "analyzed_at") -> List[Dict[str, Any]]:
+    def get_all_analyses(self, limit: int = 100, offset: int = 0, sort_by: str = "id") -> List[Dict[str, Any]]:
         with self._connect() as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
             cursor.execute(f"""
                 SELECT id, filename, file_path, overall_score, user_rating, 
-                       sharpness_score, noise_level, camera_model, iso, analyzed_at
+                       sharpness_score, noise_level, camera_model, iso
                 FROM analysis_results 
                 ORDER BY {sort_by} DESC 
                 LIMIT ? OFFSET ?
@@ -182,7 +173,7 @@ class SQLiteDatabase(DatabaseInterface):
     def update_rating(self, analysis_id: int, rating: int, notes: str = None, tags: str = None):
         with self._connect() as conn:
             cursor = conn.cursor()
-            updates = {"user_rating": rating, "updated_at": datetime.now().isoformat()}
+            updates = {"user_rating": rating}
             if notes:
                 updates["user_notes"] = notes
             if tags:
@@ -198,7 +189,7 @@ class SQLiteDatabase(DatabaseInterface):
             cursor.execute("DELETE FROM photo_categories WHERE photo_id = ?", (analysis_id,))
             cursor.execute("DELETE FROM analysis_results WHERE id = ?", (analysis_id,))
             conn.commit()
-    
+
     def get_statistics(self) -> Dict[str, Any]:
         with self._connect() as conn:
             cursor = conn.cursor()
@@ -231,8 +222,7 @@ class SQLiteDatabase(DatabaseInterface):
         with self._connect() as conn:
             cursor = conn.cursor()
             try:
-                cursor.execute("INSERT INTO categories (name, description, created_at) VALUES (?, ?, ?)",
-                             (name, description, datetime.now().isoformat()))
+                cursor.execute("INSERT INTO categories (name, description) VALUES (?, ?)", (name, description))
                 conn.commit()
                 cursor.execute("SELECT id FROM categories WHERE name = ?", (name,))
                 row = cursor.fetchone()
@@ -251,16 +241,15 @@ class SQLiteDatabase(DatabaseInterface):
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
             cursor.execute("""
-                SELECT id, filename, file_path, overall_score, user_rating, user_tags, user_notes, analyzed_at
+                SELECT id, filename, file_path, overall_score, user_rating, user_tags, user_notes
                 FROM analysis_results 
                 WHERE filename LIKE ? OR user_tags LIKE ? OR user_notes LIKE ?
-                ORDER BY analyzed_at DESC
+                ORDER BY id DESC
             """, (f"%{query}%", f"%{query}%", f"%{query}%"))
             return [dict(row) for row in cursor.fetchall()]
     
     def close(self):
         pass
-
 
 class MSSQLDatabase(DatabaseInterface):
     def __init__(self, server: str, database: str, username: str = None, password: str = None, 
@@ -332,10 +321,7 @@ class MSSQLDatabase(DatabaseInterface):
                 iso INT,
                 exposure_time NVARCHAR(50),
                 aperture FLOAT,
-                focal_length FLOAT,
-                created_at DATETIME,
-                analyzed_at DATETIME,
-                updated_at DATETIME
+                focal_length FLOAT
             )
         """)
         
@@ -344,8 +330,7 @@ class MSSQLDatabase(DatabaseInterface):
             CREATE TABLE categories (
                 id INT IDENTITY(1,1) PRIMARY KEY,
                 name NVARCHAR(255) UNIQUE NOT NULL,
-                description NVARCHAR(MAX),
-                created_at DATETIME
+                description NVARCHAR(MAX)
             )
         """)
         
@@ -367,35 +352,28 @@ class MSSQLDatabase(DatabaseInterface):
         conn = self._get_connection()
         cursor = conn.cursor()
         
+        # Конвертируем numpy типы
         data = convert_numpy_types(data)
         
-        cleaned_data = {}
-        for key, value in data.items():
+        # Удаляем поля с датами
+        cleaned_data = {k: v for k, v in data.items() }
+        
+        # Очищаем данные
+        for key, value in list(cleaned_data.items()):
             if value is None:
-                cleaned_data[key] = None
+                continue
             elif isinstance(value, float):
                 if np.isnan(value) or np.isinf(value):
                     cleaned_data[key] = None
-                else:
-                    cleaned_data[key] = value
             elif isinstance(value, (int, np.int32, np.int64)):
                 cleaned_data[key] = int(value)
-            elif isinstance(value, (str, bool)):
-                cleaned_data[key] = value
-            elif 'date' in key.lower() or 'time' in key.lower():
-                cleaned_data[key] = value.replace('T', ' ') if value else None
-            else:
-                cleaned_data[key] = value
         
         cursor.execute("SELECT id FROM analysis_results WHERE file_path = ?", (cleaned_data['file_path'],))
         existing = cursor.fetchone()
         
         if existing:
             analysis_id = existing[0]
-            cleaned_data['updated_at'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             
-            if 'created_at' in cleaned_data:
-                del cleaned_data['created_at']
             if 'id' in cleaned_data:
                 del cleaned_data['id']
             
@@ -404,11 +382,6 @@ class MSSQLDatabase(DatabaseInterface):
                 values = list(cleaned_data.values()) + [analysis_id]
                 cursor.execute(f"UPDATE analysis_results SET {set_clause} WHERE id = ?", values)
         else:
-            now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            cleaned_data['created_at'] = now
-            cleaned_data['analyzed_at'] = now
-            cleaned_data['updated_at'] = now
-            
             columns = ", ".join(cleaned_data.keys())
             placeholders = ", ".join(["?"] * len(cleaned_data))
             cursor.execute(f"INSERT INTO analysis_results ({columns}) VALUES ({placeholders})", list(cleaned_data.values()))
@@ -431,12 +404,12 @@ class MSSQLDatabase(DatabaseInterface):
             return dict(zip(columns, row))
         return None
     
-    def get_all_analyses(self, limit: int = 100, offset: int = 0, sort_by: str = "analyzed_at") -> List[Dict[str, Any]]:
+    def get_all_analyses(self, limit: int = 100, offset: int = 0, sort_by: str = "id") -> List[Dict[str, Any]]:
         conn = self._get_connection()
         cursor = conn.cursor()
         cursor.execute(f"""
             SELECT id, filename, file_path, overall_score, user_rating, 
-                   sharpness_score, noise_level, camera_model, iso, analyzed_at
+                   sharpness_score, noise_level, camera_model, iso
             FROM analysis_results 
             ORDER BY {sort_by} DESC 
             OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
@@ -449,7 +422,7 @@ class MSSQLDatabase(DatabaseInterface):
         conn = self._get_connection()
         cursor = conn.cursor()
         
-        updates = {"user_rating": rating, "updated_at": datetime.now().isoformat()}
+        updates = {"user_rating": rating}
         if notes:
             updates["user_notes"] = notes
         if tags:
@@ -504,8 +477,8 @@ class MSSQLDatabase(DatabaseInterface):
         try:
             cursor.execute("""
                 IF NOT EXISTS (SELECT 1 FROM categories WHERE name = ?)
-                INSERT INTO categories (name, description, created_at) VALUES (?, ?, ?)
-            """, (name, name, description, datetime.now().isoformat()))
+                INSERT INTO categories (name, description) VALUES (?, ?)
+            """, (name, name, description))
             conn.commit()
             
             cursor.execute("SELECT id FROM categories WHERE name = ?", (name,))
@@ -527,10 +500,10 @@ class MSSQLDatabase(DatabaseInterface):
         conn = self._get_connection()
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT id, filename, file_path, overall_score, user_rating, user_tags, user_notes, analyzed_at
+            SELECT id, filename, file_path, overall_score, user_rating, user_tags, user_notes
             FROM analysis_results 
             WHERE filename LIKE ? OR user_tags LIKE ? OR user_notes LIKE ?
-            ORDER BY analyzed_at DESC
+            ORDER BY id DESC
         """, (f"%{query}%", f"%{query}%", f"%{query}%"))
         
         columns = [desc[0] for desc in cursor.description]
@@ -540,7 +513,6 @@ class MSSQLDatabase(DatabaseInterface):
         if self.conn:
             self.conn.close()
             print("Соединение с MS SQL Server закрыто")
-
 
 class Database:   
     def __init__(self, db_type: str = "sqlite", **kwargs):
