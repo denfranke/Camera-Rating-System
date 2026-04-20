@@ -6,6 +6,7 @@ from pathlib import Path
 
 from database import Database
 from analyzer import ImageAnalyzer
+from dxomark_service import DxOMarkService
 
 
 def signal_handler(sig, frame):
@@ -265,6 +266,12 @@ def analyze_photo(db: Database, analyzer: ImageAnalyzer):
     
     try:
         result = analyzer.analyze(file_path)
+        # --- DXOMARK ---
+        dxo = DxOMarkService()
+        score = dxo.get_score(result.get('camera_model'))
+        
+        if score:
+            result['dxomark_score'] = score
         analysis_id = db.save_analysis(result)
         
         print("Анализ завершен!\n")
@@ -297,6 +304,10 @@ def analyze_photo(db: Database, analyzer: ImageAnalyzer):
         if result.get('camera_model'):
             print("  Информация о камере:")
             print(f"    Модель: {result.get('camera_model', 'N/A')}")
+            
+            if result.get('dxomark_score'):
+                print(f"    DxOMark: {result.get('dxomark_score')}")
+           
             print(f"    ISO: {result.get('iso', 'N/A')}")
             print(f"    Выдержка: {result.get('exposure_time', 'N/A')}")
             print(f"    Диафрагма: {result.get('aperture', 'N/A')}")
