@@ -117,21 +117,66 @@ class ImageAnalyzer:
         """Анализ RAW изображений"""
         try:
             with rawpy.imread(file_path) as raw:
-                # Получаем сырые данные
-                raw_array = raw.raw_image_visible.astype(np.float32)
+                # Получаем JPEG preview для анализа
+                try:
+                    # Постобработка RAW в RGB
+                    rgb = raw.postprocess(
+                        use_camera_wb=True,
+                        output_color=rawpy.ColorSpace.sRGB,
+                        gamma=(2.222, 4.5),
+                        no_auto_bright=False,
+                        auto_bright_thr=0.01
+                    )
+                    
+                    # Конвертируем в numpy array для анализа
+                    preview_pixels = np.array(rgb).astype(np.float32)
+                    
+                    # Получаем размеры
+                    height, width = preview_pixels.shape[:2]
+                    
+                    # Вычисляем ВСЕ метрики из RGB preview
+                    sharpness = self._calculate_sharpness(preview_pixels)
+                    noise = self._calculate_noise(preview_pixels)
+                    brightness = self._calculate_brightness(preview_pixels)
+                    contrast = self._calculate_contrast(preview_pixels)
+                    saturation = self._calculate_saturation(preview_pixels)
+                    dynamic_range = self._calculate_dynamic_range(preview_pixels)
+                    exposure_score = self._calculate_exposure_score(preview_pixels)
+                    composition_score = self._calculate_composition_score(preview_pixels)
+                    avg_r, avg_g, avg_b = self._get_color_averages(preview_pixels)
+                    
+                    # Общая оценка
+                    overall_score = self._calculate_overall_score({
+                        'sharpness': sharpness,
+                        'noise': noise,
+                        'brightness': brightness,
+                        'contrast': contrast,
+                        'saturation': saturation,
+                        'dynamic_range': dynamic_range,
+                        'exposure_score': exposure_score
+                    })
+                    
+                    print(f"  [DEBUG RAW] sharpness={sharpness}, noise={noise}, dr={dynamic_range}")
+                    
+                except Exception as e:
+                    print(f"  ⚠️ Ошибка при обработке preview: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    # Значения по умолчанию
+                    height, width = 0, 0
+                    sharpness = 0.0
+                    noise = 0.0
+                    brightness = 0.5
+                    contrast = 0.5
+                    saturation = 0.5
+                    dynamic_range = 5.0
+                    exposure_score = 0.5
+                    composition_score = 0.5
+                    avg_r = avg_g = avg_b = 0.33
+                    overall_score = 0.0
                 
-                # Основная информация
+                # Основная информация о файле
                 file_size = os.path.getsize(file_path)
-                height, width = raw_array.shape
-                
-                # Получаем уровни черного и белого
-                black_level = getattr(raw, 'black_level_per_channel', [0])[0]
-                white_level = getattr(raw, 'white_level', 16383)
-                
-                # RAW-специфичные метрики
-                dynamic_range = self._calculate_raw_dynamic_range(raw_array, black_level, white_level)
-                noise = self._calculate_raw_noise(raw_array, white_level)
-                sharpness = self._calculate_raw_sharpness(raw_array)
                 
                 # Извлекаем метаданные камеры
                 camera_make = None
@@ -145,61 +190,52 @@ class ImageAnalyzer:
                     camera_make = getattr(raw.metadata, 'make', None)
                     camera_model = getattr(raw.metadata, 'model', None)
                     iso = getattr(raw.metadata, 'iso_speed', None)
-                    exposure_time = getattr(raw.metadata, 'shutter', None)
+                    
+                    # Обработка выдержки
+                    shutter = getattr(raw.metadata, 'shutter', None)
+                    if shutter:
+                        if shutter < 1:
+                            exposure_time = f"1/{int(1/shutter)}"
+                        else:
+                            exposure_time = f"{shutter}"
+                    
                     aperture = getattr(raw.metadata, 'aperture', None)
                     focal_length = getattr(raw.metadata, 'focal_length', None)
                 
-                # Получаем JPEG preview для дополнительного анализа
-                try:
-                    preview = raw.postprocess(use_camera_wb=True)
-                    preview_pixels = np.array(preview).astype(np.float32)
-                    brightness = self._calculate_brightness(preview_pixels)
-                    saturation = self._calculate_saturation(preview_pixels)
-                    exposure_score = self._calculate_exposure_score(preview_pixels)
-                    avg_r, avg_g, avg_b = self._get_color_averages(preview_pixels)
-                except:
-                    brightness = 0.5
-                    saturation = 0.5
-                    exposure_score = 0.5
-                    avg_r, avg_g, avg_b = 0.33, 0.33, 0.33
-                
-                overall_score = self._calculate_overall_score({
-                    'sharpness': sharpness,
-                    'noise': noise,
-                    'brightness': brightness,
-                    'saturation': saturation,
-                    'dynamic_range': dynamic_range,
-                    'exposure_score': exposure_score
-                })
-                
-                return {
+                # Формируем результат со ВСЕМИ метриками
+                result = {
                     'file_path': file_path,
                     'filename': os.path.basename(file_path),
                     'file_size': file_size,
                     'image_width': width,
                     'image_height': height,
-                    'sharpness_score': round(sharpness, 2),
-                    'noise_level': round(noise, 2),
-                    'brightness': round(brightness, 2),
-                    'contrast': 0.5,
-                    'saturation': round(saturation, 2),
-                    'dynamic_range': round(dynamic_range, 2),
-                    'avg_red': round(avg_r, 2),
-                    'avg_green': round(avg_g, 2),
-                    'avg_blue': round(avg_b, 2),
-                    'exposure_score': round(exposure_score, 2),
-                    'composition_score': 0.5,
-                    'overall_score': round(overall_score, 2),
+                    'sharpness_score': float(round(sharpness, 2)),
+                    'noise_level': float(round(noise, 2)),
+                    'brightness': float(round(brightness, 2)),
+                    'contrast': float(round(contrast, 2)),
+                    'saturation': float(round(saturation, 2)),
+                    'dynamic_range': float(round(dynamic_range, 2)),
+                    'avg_red': float(round(avg_r, 2)),
+                    'avg_green': float(round(avg_g, 2)),
+                    'avg_blue': float(round(avg_b, 2)),
+                    'exposure_score': float(round(exposure_score, 2)),
+                    'composition_score': float(round(composition_score, 2)),
+                    'overall_score': float(round(overall_score, 2)),
                     'camera_make': camera_make,
                     'camera_model': camera_model,
                     'iso': iso,
-                    'exposure_time': str(exposure_time) if exposure_time else None,
-                    'aperture': aperture,
-                    'focal_length': focal_length
+                    'exposure_time': exposure_time,
+                    'aperture': round(aperture, 1) if aperture else None,
+                    'focal_length': round(focal_length, 1) if focal_length else None
                 }
+                
+                # print(f"  [DEBUG RAW] Результат: {result.keys()}")
+                return result
+                    
         except Exception as e:
-            # Если RAW не удалось обработать, пробуем как обычное изображение
             print(f"  ⚠️ RAW обработка не удалась: {e}")
+            import traceback
+            traceback.print_exc()
             print(f"  🔄 Пробуем обработать как обычное изображение...")
             return self._analyze_raster(file_path)
     

@@ -1,8 +1,7 @@
-import os
-from datetime import datetime
-from typing import List, Dict, Optional, Any
-from abc import ABC, abstractmethod
 import sqlite3
+import numpy as np
+from typing import Dict, Any, Optional, List
+from abc import ABC, abstractmethod
 
 try:
     import pyodbc
@@ -11,9 +10,8 @@ except ImportError:
     PYODBC_AVAILABLE = False
 
 
-import numpy as np
-
 def convert_numpy_types(obj):
+    """Конвертирует numpy типы в стандартные Python типы"""
     if obj is None:
         return None
     elif isinstance(obj, (np.float32, np.float64)):
@@ -28,6 +26,7 @@ def convert_numpy_types(obj):
         return [convert_numpy_types(item) for item in obj]
     return obj
 
+
 class DatabaseInterface(ABC):    
     @abstractmethod
     def save_analysis(self, data: Dict[str, Any]) -> int:
@@ -38,7 +37,7 @@ class DatabaseInterface(ABC):
         pass
     
     @abstractmethod
-    def get_all_analyses(self, limit: int, offset: int, sort_by: str) -> List[Dict[str, Any]]:
+    def get_all_analyses(self, limit: int = 100, offset: int = 0, sort_by: str = "id") -> List[Dict[str, Any]]:
         pass
     
     @abstractmethod
@@ -58,6 +57,14 @@ class DatabaseInterface(ABC):
         pass
     
     @abstractmethod
+    def add_category(self, name: str, description: str = "") -> Optional[int]:
+        pass
+    
+    @abstractmethod
+    def add_photo_to_category(self, photo_id: int, category_id: int):
+        pass
+    
+    @abstractmethod
     def close(self):
         pass
 
@@ -74,6 +81,25 @@ class SQLiteDatabase(DatabaseInterface):
         with self._connect() as conn:
             cursor = conn.cursor()
             
+            # Проверяем существование таблицы
+            cursor.execute("""
+                SELECT name FROM sqlite_master 
+                WHERE type='table' AND name='analysis_results'
+            """)
+            table_exists = cursor.fetchone()
+            
+            if table_exists:
+                # Проверяем наличие колонки dxomark_score
+                cursor.execute("PRAGMA table_info(analysis_results)")
+                columns = [column[1] for column in cursor.fetchall()]
+                
+                if 'dxomark_score' not in columns:
+                    print("Добавление колонки dxomark_score в существующую таблицу...")
+                    cursor.execute("ALTER TABLE analysis_results ADD COLUMN dxomark_score INTEGER")
+                    conn.commit()
+                    print("Колонка dxomark_score успешно добавлена")
+            
+            # Создаем таблицу если её нет (с полной структурой)
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS analysis_results (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -102,6 +128,7 @@ class SQLiteDatabase(DatabaseInterface):
                     iso INTEGER,
                     exposure_time TEXT,
                     aperture REAL,
+                    dxomark_score INTEGER,
                     focal_length REAL
                 )
             """)
@@ -121,29 +148,270 @@ class SQLiteDatabase(DatabaseInterface):
                     PRIMARY KEY (photo_id, category_id)
                 )
             """)
+
+            # --- DXOMARK TABLE ---
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS dxomark (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    model TEXT NOT NULL,
+                    score INTEGER NOT NULL
+                )
+            """)
             
-            conn.commit()
-            print("SQLite база данных инициализирована")
+            # --- ЗАПОЛНЕНИЕ DXOMARK ---
+            cursor.execute("SELECT COUNT(*) FROM dxomark")
+            count = cursor.fetchone()[0]
+            
+            if count == 0:
+                smartphone_data = [
+                    ('Huawei Pura 80 Ultra', 175),
+                    ('Vivo X300 Pro', 171),
+                    ('Oppo Find X8 Ultra', 168),
+                    ('Apple iPhone 17 Pro', 168),
+                    ('Vivo X200 Ultra', 167),
+                    ('Oppo Find X9 Pro', 166),
+                    ('Xiaomi 17 Ultra', 166),
+                    ('Honor Magic8 Pro', 164),
+                    ('Motorola Razr Fold', 164),
+                    ('Motorola Signature', 164),
+                    ('Google Pixel 10 Pro XL', 163),
+                    ('Huawei Pura 70 Ultra', 163),
+                    ('Apple iPhone 16 Pro Max', 161),
+                    ('Google Pixel 9 Pro XL', 160),
+                    ('Xiaomi 17 Pro Max', 159),
+                    ('Xiaomi 15 Ultra', 159),
+                    ('Honor Magic6 Pro', 158),
+                    ('Apple iPhone 16 Pro', 157),
+                    ('Huawei Mate 60 Pro+', 157),
+                    ('Oppo Find X8 Pro', 157),
+                    ('Oppo Find X7 Ultra', 157),
+                    ('Samsung Galaxy S26 Ultra', 157),
+                    ('Huawei P60 Pro', 156),
+                    ('Apple iPhone 15 Pro Max', 154),
+                    ('Apple iPhone 15 Pro', 154),
+                    ('Google Pixel 8 Pro', 153),
+                    ('Oppo Find X6 Pro', 153),
+                    ('Honor Magic5 Pro', 152),
+                    ('Samsung Galaxy S25 Ultra', 151),
+                    ('Honor Magic V5', 150),
+                    ('Oppo Find X6', 150),
+                    ('Vivo X100 Pro', 150),
+                    ('Huawei Mate 50 Pro', 149),
+                    ('Xiaomi 15T Pro', 149),
+                    ('Xiaomi 14 Ultra', 149),
+                    ('Google Pixel 8', 148),
+                    ('Honor Magic7 Pro', 148),
+                    ('Apple iPhone 16', 147),
+                    ('Google Pixel 7 Pro', 147),
+                    ('Xiaomi 15', 147),
+                    ('Apple iPhone 14 Pro Max', 146),
+                    ('Apple iPhone 14 Pro', 146),
+                    ('Motorola Edge 50 Ultra', 146),
+                    ('Tecno Camon 50 Ultra 5G', 146),
+                    ('Apple iPhone 15', 145),
+                    ('Apple iPhone 15 Plus', 145),
+                    ('Samsung Galaxy Z Fold7', 145),
+                    ('Samsung Galaxy S24 Ultra', 144),
+                    ('Google Pixel 9', 143),
+                    ('Huawei P50 Pro', 143),
+                    ('Apple iPhone Air', 141),
+                    ('Apple iPhone 13 Pro Max', 141),
+                    ('Apple iPhone 13 Pro', 141),
+                    ('Xiaomi Mi 11 Ultra', 141),
+                    ('Google Pixel 7', 140),
+                    ('Samsung Galaxy S23 Ultra', 140),
+                    ('Xiaomi 13 Ultra', 140),
+                    ('Huawei Mate 40 Pro+', 139),
+                    ('Xiaomi 14', 138),
+                    ('Honor 200 Pro', 137),
+                    ('Samsung Galaxy Z Flip7', 137),
+                    ('Google Pixel 8a', 136),
+                    ('Xiaomi 13 Pro', 136),
+                    ('Huawei Mate 40 Pro', 135),
+                    ('Samsung Galaxy S22 Ultra', 135),
+                    ('Google Pixel 10a', 134),
+                    ('Google Pixel 6 Pro', 134),
+                    ('Apple iPhone 14 Plus', 133),
+                    ('Apple iPhone 14', 133),
+                    ('Samsung Galaxy S24', 133),
+                    ('Samsung Galaxy S23', 133),
+                    ('Apple iPhone 12 Pro Max', 131),
+                    ('Xiaomi 13T Pro', 131),
+                    ('Honor 200', 130),
+                    ('Motorola Edge 40 Pro', 130),
+                    ('Samsung Galaxy Z Fold6', 130),
+                    ('Xiaomi 13', 130),
+                    ('Google Pixel 9 Pro Fold', 129),
+                    ('Huawei P40 Pro', 129),
+                    ('Samsung Galaxy Z Flip6', 129),
+                    ('Xiaomi 12 Pro', 129),
+                    ('Google Pixel 9a', 128),
+                    ('Oppo Find X3 Pro', 128),
+                    ('Samsung Galaxy Z Fold5', 128),
+                    ('Apple iPhone 12 Pro', 127),
+                    ('OnePlus 11', 127),
+                    ('Samsung Galaxy S23 FE', 127),
+                    ('Google Pixel 6', 126),
+                    ('Honor Magic4 Pro', 126),
+                    ('Apple iPhone 13', 125),
+                    ('Samsung Galaxy S22+', 125),
+                    ('Samsung Galaxy Z Fold4', 124),
+                    ('Xiaomi 13T', 123),
+                    ('Apple iPhone 11 Pro Max', 122),
+                    ('Google Pixel 6a', 122),
+                    ('OnePlus 10 Pro', 122),
+                    ('Xiaomi Redmi Note 13 Pro Plus 5G', 121),
+                    ('Samsung Galaxy S22', 120),
+                    ('Samsung Galaxy Z Fold3', 120),
+                    ('Honor Magic Vs', 119),
+                    ('Sony Xperia 5 IV', 119),
+                    ('Samsung Galaxy S25 FE', 118),
+                    ('Sony Xperia 5 V', 118),
+                    ('Apple iPhone 12', 117),
+                    ('Samsung Galaxy S21 Ultra', 117),
+                    ('Apple iPhone 11', 116),
+                    ('Samsung Galaxy S21+', 115),
+                    ('Xiaomi 12T', 115),
+                    ('Nothing Phone(1)', 114),
+                    ('Samsung Galaxy A56', 114),
+                    ('OnePlus 8 Pro', 113),
+                    ('Xiaomi Redmi Note 12 Pro+ 5G', 113),
+                    ('Samsung Galaxy Z Flip4', 112),
+                    ('Samsung Galaxy Z Flip3', 111),
+                    ('Google Pixel 5', 109),
+                    ('Samsung Galaxy A55 5G', 108),
+                    ('Samsung Galaxy A54 5G', 107),
+                    ('Oppo Find X3 Neo', 106),
+                    ('Sony Xperia 1 III', 105),
+                    ('Samsung Galaxy A35 5G', 104),
+                    ('Motorola Edge 40 Neo', 103),
+                    ('Huawei P40', 102),
+                    ('Black Shark 5 Pro', 101),
+                    ('Apple iPhone SE (2022)', 100),
+                    ('Motorola Moto g75 5G', 96),
+                    ('ZTE Axon 30 Ultra', 96),
+                    ('Oppo Find X5 Lite', 95),
+                    ('Oppo Reno4 5G', 94),
+                    ('Oppo A94 5G', 93),
+                    ('Vivo X80 Lite 5G', 93),
+                    ('Motorola Razr 50', 92),
+                    ('Samsung Galaxy A25 5G', 92),
+                    ('Samsung Galaxy A34 5G', 92),
+                    ('Samsung Galaxy A72', 92),
+                    ('Xiaomi Redmi Note 13 5G', 91),
+                    ('Oppo Reno6 5G', 89),
+                    ('Motorola Moto g85 5G', 88),
+                    ('Samsung Galaxy A52s 5G', 88),
+                    ('Samsung Galaxy A52 5G', 88),
+                    ('Honor 200 Lite', 86),
+                    ('Motorola moto g54 5G', 85),
+                    ('Samsung Galaxy A16 LTE', 85),
+                    ('Samsung Galaxy A33 5G', 85),
+                    ('Honor Magic6 Lite', 84),
+                    ('OnePlus Nord CE 5G', 84),
+                    ('Xiaomi Redmi Note 14', 84),
+                    ('Samsung Galaxy A15 5G', 83),
+                    ('Vivo Y76 5G', 83),
+                    ('Samsung Galaxy A15 LTE', 81),
+                    ('Honor 90 Smart', 79),
+                    ('Samsung Galaxy A53 5G', 79),
+                    ('Sony Xperia 10 V', 78),
+                    ('Xiaomi Redmi Note 11 Pro 5G', 78),
+                    ('Samsung Galaxy A16 5G', 77),
+                    ('TCL 40R 5G', 76),
+                    ('Motorola Moto G35 5G', 75),
+                    ('Realme 9i 5G', 75),
+                    ('Xiaomi Redmi Note 13', 75),
+                    ('Honor Magic5 Lite 5G', 74),
+                    ('Honor 90 Lite', 73),
+                    ('Samsung Galaxy A23 5G', 70),
+                    ('Fairphone 4', 69),
+                    ('Oppo A78 5G', 69),
+                    ('Xiaomi Redmi Note 12 5G', 69),
+                    ('Motorola Moto G53 5G', 68),
+                    ('Motorola moto g34 5G', 67),
+                    ('Samsung Galaxy A14 5G', 67),
+                    ('Motorola Moto G62 5G', 66),
+                    ('Xiaomi Redmi Note 11S 5G', 65),
+                    ('Oppo Reno8 Lite 5G', 64),
+                    ('Sony Xperia 10 IV', 63),
+                    ('Xiaomi Redmi 14C', 63),
+                    ('Xiaomi Redmi 13C', 63),
+                    ('Xiaomi Redmi 12 5G', 63),
+                    ('Xiaomi Redmi Note 12', 63),
+                    ('Honor Magic4 Lite 5G', 61),
+                    ('Honor X7', 61),
+                    ('Xiaomi Redmi 13C 5G', 60),
+                    ('Xiaomi Redmi Note 11', 60),
+                    ('Crosscall Stellar-M6', 59),
+                    ('Honor 70 Lite', 58),
+                    ('Honor 200 Smart', 55),
+                    ('Motorola Moto G23', 54),
+                    ('Oppo A77 5G', 53),
+                    ('Honor X8 5G', 52),
+                    ('TCL 406', 52),
+                    ('Xiaomi Redmi 10 2022', 51),
+                    ('Crosscall Action-X5', 50),
+                    ('Samsung Galaxy A22 5G', 48),
+                    ('Crosscall Core-Z5', 47),
+                    ('Oppo A57', 46),
+                    ('Oppo A16s 5G', 46),
+                    ('Samsung Galaxy A05s', 45),
+                    ('Xiaomi Redmi A3', 45),
+                    ('Xiaomi Redmi 12C', 45)
+                ]
+                
+                try:
+                    cursor.executemany("""
+                        INSERT INTO dxomark (model, score) VALUES (?, ?)
+                    """, smartphone_data)
+                    conn.commit()
+                    print(f"Успешно добавлено {len(smartphone_data)} записей в таблицу dxomark")
+                except sqlite3.IntegrityError as e:
+                    print(f"Ошибка целостности данных: {e}")
+                    conn.rollback()
+                except Exception as e:
+                    print(f"Ошибка при вставке данных: {e}")
+                    conn.rollback()
+            else:
+                print(f"Таблица dxomark уже содержит {count} записей. Вставка пропущена.")
     
     def save_analysis(self, data: Dict[str, Any]) -> int:
         with self._connect() as conn:
             cursor = conn.cursor()
             
-            cursor.execute("SELECT id FROM analysis_results WHERE file_path = ?", (data['file_path'],))
-            existing = cursor.fetchone()
+            # Конвертируем numpy типы
+            data = convert_numpy_types(data)
             
-            # Удаляем поля с датами если они есть
-            save_data = {k: v for k, v in data.items() }
+            # Подготавливаем данные для сохранения
+            save_data = {}
+            for key, value in data.items():
+                if value is None:
+                    save_data[key] = None
+                elif isinstance(value, float) and (np.isnan(value) or np.isinf(value)):
+                    save_data[key] = None
+                else:
+                    save_data[key] = value
+            
+            # Проверяем существование записи
+            cursor.execute("SELECT id FROM analysis_results WHERE file_path = ?", (save_data.get('file_path'),))
+            existing = cursor.fetchone()
             
             if existing:
                 analysis_id = existing[0]
-                set_clause = ", ".join([f"{k} = ?" for k in save_data.keys()])
-                values = list(save_data.values()) + [analysis_id]
-                cursor.execute(f"UPDATE analysis_results SET {set_clause} WHERE id = ?", values)
+                # Удаляем id из данных для обновления
+                if 'id' in save_data:
+                    del save_data['id']
+                
+                if save_data:
+                    set_clause = ", ".join([f"{k} = ?" for k in save_data.keys()])
+                    values = list(save_data.values()) + [analysis_id]
+                    cursor.execute(f"UPDATE analysis_results SET {set_clause} WHERE id = ?", values)
             else:
                 columns = ", ".join(save_data.keys())
                 placeholders = ", ".join(["?"] * len(save_data))
-                cursor.execute(f"INSERT INTO analysis_results ({columns}) VALUES ({placeholders})", list(save_data.values()))
+                cursor.execute(f"INSERT INTO analysis_results ({columns}) VALUES ({placeholders})", 
+                             list(save_data.values()))
                 analysis_id = cursor.lastrowid
             
             conn.commit()
@@ -161,14 +429,42 @@ class SQLiteDatabase(DatabaseInterface):
         with self._connect() as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
-            cursor.execute(f"""
-                SELECT id, filename, file_path, overall_score, user_rating, 
-                       sharpness_score, noise_level, camera_model, iso
+            
+            # Запрашиваем ВСЕ метрики
+            query = f"""
+                SELECT 
+                    id, filename, file_path, overall_score, user_rating, 
+                    sharpness_score, noise_level, camera_model, iso, dxomark_score,
+                    dynamic_range, brightness, contrast, saturation, 
+                    exposure_score, composition_score,
+                    image_width, image_height, file_size,
+                    camera_make, exposure_time, aperture, focal_length,
+                    avg_red, avg_green, avg_blue, user_tags, user_notes
                 FROM analysis_results 
                 ORDER BY {sort_by} DESC 
                 LIMIT ? OFFSET ?
-            """, (limit, offset))
-            return [dict(row) for row in cursor.fetchall()]
+            """
+            cursor.execute(query, (limit, offset))
+            
+            results = []
+            for row in cursor.fetchall():
+                result = dict(row)
+                # Конвертируем None в подходящие значения
+                if result.get('dynamic_range') is None:
+                    result['dynamic_range'] = 'N/A'
+                if result.get('brightness') is None:
+                    result['brightness'] = 'N/A'
+                if result.get('contrast') is None:
+                    result['contrast'] = 'N/A'
+                if result.get('saturation') is None:
+                    result['saturation'] = 'N/A'
+                if result.get('exposure_score') is None:
+                    result['exposure_score'] = 'N/A'
+                if result.get('composition_score') is None:
+                    result['composition_score'] = 'N/A'
+                results.append(result)
+            
+            return results
     
     def update_rating(self, analysis_id: int, rating: int, notes: str = None, tags: str = None):
         with self._connect() as conn:
@@ -180,7 +476,8 @@ class SQLiteDatabase(DatabaseInterface):
                 updates["user_tags"] = tags
             
             set_clause = ", ".join([f"{k} = ?" for k in updates.keys()])
-            cursor.execute(f"UPDATE analysis_results SET {set_clause} WHERE id = ?", list(updates.values()) + [analysis_id])
+            cursor.execute(f"UPDATE analysis_results SET {set_clause} WHERE id = ?", 
+                         list(updates.values()) + [analysis_id])
             conn.commit()
     
     def delete_analysis(self, analysis_id: int):
@@ -189,18 +486,26 @@ class SQLiteDatabase(DatabaseInterface):
             cursor.execute("DELETE FROM photo_categories WHERE photo_id = ?", (analysis_id,))
             cursor.execute("DELETE FROM analysis_results WHERE id = ?", (analysis_id,))
             conn.commit()
-
+    
     def get_statistics(self) -> Dict[str, Any]:
         with self._connect() as conn:
             cursor = conn.cursor()
             
             stats = {}
+            
+            # Общее количество
             cursor.execute("SELECT COUNT(*) FROM analysis_results")
             stats['total_photos'] = cursor.fetchone()[0]
             
+            # Средние значения
             cursor.execute("""
-                SELECT AVG(overall_score), AVG(sharpness_score), AVG(noise_level), AVG(user_rating)
-                FROM analysis_results WHERE overall_score IS NOT NULL
+                SELECT 
+                    AVG(overall_score), 
+                    AVG(sharpness_score), 
+                    AVG(noise_level), 
+                    AVG(user_rating)
+                FROM analysis_results 
+                WHERE overall_score IS NOT NULL
             """)
             row = cursor.fetchone()
             stats['avg_overall_score'] = round(row[0], 2) if row[0] else 0
@@ -208,15 +513,41 @@ class SQLiteDatabase(DatabaseInterface):
             stats['avg_noise'] = round(row[2], 2) if row[2] else 0
             stats['avg_user_rating'] = round(row[3], 2) if row[3] else 0
             
+            # Топ камер
             cursor.execute("""
                 SELECT camera_model, COUNT(*) as count 
                 FROM analysis_results 
                 WHERE camera_model IS NOT NULL AND camera_model != ''
-                GROUP BY camera_model ORDER BY count DESC LIMIT 5
+                GROUP BY camera_model 
+                ORDER BY count DESC 
+                LIMIT 5
             """)
-            stats['top_cameras'] = [dict(row) for row in cursor.fetchall()]
+            stats['top_cameras'] = [{'camera_model': row[0], 'count': row[1]} for row in cursor.fetchall()]
+            
+            # DxOMark статистика
+            cursor.execute("""
+                SELECT AVG(dxomark_score), MAX(dxomark_score), MIN(dxomark_score)
+                FROM analysis_results 
+                WHERE dxomark_score IS NOT NULL
+            """)
+            row = cursor.fetchone()
+            stats['avg_dxomark'] = round(row[0], 1) if row and row[0] else 0
+            stats['max_dxomark'] = row[1] if row and row[1] else 0
+            stats['min_dxomark'] = row[2] if row and row[2] else 0
             
             return stats
+    
+    def search_photos(self, query: str) -> List[Dict[str, Any]]:      
+        with self._connect() as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT id, filename, file_path, overall_score, user_rating, user_tags, user_notes
+                FROM analysis_results 
+                WHERE filename LIKE ? OR user_tags LIKE ? OR user_notes LIKE ?
+                ORDER BY id DESC
+            """, (f"%{query}%", f"%{query}%", f"%{query}%"))
+            return [dict(row) for row in cursor.fetchall()]
     
     def add_category(self, name: str, description: str = "") -> Optional[int]:        
         with self._connect() as conn:
@@ -233,23 +564,13 @@ class SQLiteDatabase(DatabaseInterface):
     def add_photo_to_category(self, photo_id: int, category_id: int):       
         with self._connect() as conn:
             cursor = conn.cursor()
-            cursor.execute("INSERT OR IGNORE INTO photo_categories (photo_id, category_id) VALUES (?, ?)", (photo_id, category_id))
+            cursor.execute("INSERT OR IGNORE INTO photo_categories (photo_id, category_id) VALUES (?, ?)", 
+                         (photo_id, category_id))
             conn.commit()
-    
-    def search_photos(self, query: str) -> List[Dict[str, Any]]:      
-        with self._connect() as conn:
-            conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
-            cursor.execute("""
-                SELECT id, filename, file_path, overall_score, user_rating, user_tags, user_notes
-                FROM analysis_results 
-                WHERE filename LIKE ? OR user_tags LIKE ? OR user_notes LIKE ?
-                ORDER BY id DESC
-            """, (f"%{query}%", f"%{query}%", f"%{query}%"))
-            return [dict(row) for row in cursor.fetchall()]
     
     def close(self):
         pass
+
 
 class MSSQLDatabase(DatabaseInterface):
     def __init__(self, server: str, database: str, username: str = None, password: str = None, 
@@ -292,6 +613,7 @@ class MSSQLDatabase(DatabaseInterface):
         conn = self._get_connection()
         cursor = conn.cursor()
         
+        # Создаем таблицу analysis_results
         cursor.execute("""
             IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='analysis_results' AND xtype='U')
             CREATE TABLE analysis_results (
@@ -321,10 +643,20 @@ class MSSQLDatabase(DatabaseInterface):
                 iso INT,
                 exposure_time NVARCHAR(50),
                 aperture FLOAT,
-                focal_length FLOAT
+                focal_length FLOAT,
+                dxomark_score INT
             )
+        ELSE
+            BEGIN
+                IF NOT EXISTS (SELECT * FROM INFORMATION_SCHEMA.COLUMNS 
+                               WHERE TABLE_NAME = 'analysis_results' AND COLUMN_NAME = 'dxomark_score')
+                BEGIN
+                    ALTER TABLE analysis_results ADD dxomark_score INT
+                END
+            END
         """)
         
+        # Создаем таблицу categories
         cursor.execute("""
             IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='categories' AND xtype='U')
             CREATE TABLE categories (
@@ -334,6 +666,7 @@ class MSSQLDatabase(DatabaseInterface):
             )
         """)
         
+        # Создаем таблицу photo_categories
         cursor.execute("""
             IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='photo_categories' AND xtype='U')
             CREATE TABLE photo_categories (
@@ -345,6 +678,228 @@ class MSSQLDatabase(DatabaseInterface):
             )
         """)
         
+        # Создаем таблицу dxomark
+        cursor.execute("""
+            IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='dxomark' AND xtype='U')
+            CREATE TABLE dxomark (
+                id INT IDENTITY(1,1) PRIMARY KEY,
+                model NVARCHAR(255) NOT NULL,
+                score INT NOT NULL
+            )
+        """)
+        
+        # Заполняем таблицу dxomark (аналогично SQLite)
+        cursor.execute("SELECT COUNT(*) FROM dxomark")
+        count = cursor.fetchone()[0]
+        
+        if count == 0:
+            smartphone_data = [
+                ('Huawei Pura 80 Ultra', 175),
+                ('Vivo X300 Pro', 171),
+                ('Oppo Find X8 Ultra', 168),
+                ('Apple iPhone 17 Pro', 168),
+                ('Vivo X200 Ultra', 167),
+                ('Oppo Find X9 Pro', 166),
+                ('Xiaomi 17 Ultra', 166),
+                ('Honor Magic8 Pro', 164),
+                ('Motorola Razr Fold', 164),
+                ('Motorola Signature', 164),
+                ('Google Pixel 10 Pro XL', 163),
+                ('Huawei Pura 70 Ultra', 163),
+                ('Apple iPhone 16 Pro Max', 161),
+                ('Google Pixel 9 Pro XL', 160),
+                ('Xiaomi 17 Pro Max', 159),
+                ('Xiaomi 15 Ultra', 159),
+                ('Honor Magic6 Pro', 158),
+                ('Apple iPhone 16 Pro', 157),
+                ('Huawei Mate 60 Pro+', 157),
+                ('Oppo Find X8 Pro', 157),
+                ('Oppo Find X7 Ultra', 157),
+                ('Samsung Galaxy S26 Ultra', 157),
+                ('Huawei P60 Pro', 156),
+                ('Apple iPhone 15 Pro Max', 154),
+                ('Apple iPhone 15 Pro', 154),
+                ('Google Pixel 8 Pro', 153),
+                ('Oppo Find X6 Pro', 153),
+                ('Honor Magic5 Pro', 152),
+                ('Samsung Galaxy S25 Ultra', 151),
+                ('Honor Magic V5', 150),
+                ('Oppo Find X6', 150),
+                ('Vivo X100 Pro', 150),
+                ('Huawei Mate 50 Pro', 149),
+                ('Xiaomi 15T Pro', 149),
+                ('Xiaomi 14 Ultra', 149),
+                ('Google Pixel 8', 148),
+                ('Honor Magic7 Pro', 148),
+                ('Apple iPhone 16', 147),
+                ('Google Pixel 7 Pro', 147),
+                ('Xiaomi 15', 147),
+                ('Apple iPhone 14 Pro Max', 146),
+                ('Apple iPhone 14 Pro', 146),
+                ('Motorola Edge 50 Ultra', 146),
+                ('Tecno Camon 50 Ultra 5G', 146),
+                ('Apple iPhone 15', 145),
+                ('Apple iPhone 15 Plus', 145),
+                ('Samsung Galaxy Z Fold7', 145),
+                ('Samsung Galaxy S24 Ultra', 144),
+                ('Google Pixel 9', 143),
+                ('Huawei P50 Pro', 143),
+                ('Apple iPhone Air', 141),
+                ('Apple iPhone 13 Pro Max', 141),
+                ('Apple iPhone 13 Pro', 141),
+                ('Xiaomi Mi 11 Ultra', 141),
+                ('Google Pixel 7', 140),
+                ('Samsung Galaxy S23 Ultra', 140),
+                ('Xiaomi 13 Ultra', 140),
+                ('Huawei Mate 40 Pro+', 139),
+                ('Xiaomi 14', 138),
+                ('Honor 200 Pro', 137),
+                ('Samsung Galaxy Z Flip7', 137),
+                ('Google Pixel 8a', 136),
+                ('Xiaomi 13 Pro', 136),
+                ('Huawei Mate 40 Pro', 135),
+                ('Samsung Galaxy S22 Ultra', 135),
+                ('Google Pixel 10a', 134),
+                ('Google Pixel 6 Pro', 134),
+                ('Apple iPhone 14 Plus', 133),
+                ('Apple iPhone 14', 133),
+                ('Samsung Galaxy S24', 133),
+                ('Samsung Galaxy S23', 133),
+                ('Apple iPhone 12 Pro Max', 131),
+                ('Xiaomi 13T Pro', 131),
+                ('Honor 200', 130),
+                ('Motorola Edge 40 Pro', 130),
+                ('Samsung Galaxy Z Fold6', 130),
+                ('Xiaomi 13', 130),
+                ('Google Pixel 9 Pro Fold', 129),
+                ('Huawei P40 Pro', 129),
+                ('Samsung Galaxy Z Flip6', 129),
+                ('Xiaomi 12 Pro', 129),
+                ('Google Pixel 9a', 128),
+                ('Oppo Find X3 Pro', 128),
+                ('Samsung Galaxy Z Fold5', 128),
+                ('Apple iPhone 12 Pro', 127),
+                ('OnePlus 11', 127),
+                ('Samsung Galaxy S23 FE', 127),
+                ('Google Pixel 6', 126),
+                ('Honor Magic4 Pro', 126),
+                ('Apple iPhone 13', 125),
+                ('Samsung Galaxy S22+', 125),
+                ('Samsung Galaxy Z Fold4', 124),
+                ('Xiaomi 13T', 123),
+                ('Apple iPhone 11 Pro Max', 122),
+                ('Google Pixel 6a', 122),
+                ('OnePlus 10 Pro', 122),
+                ('Xiaomi Redmi Note 13 Pro Plus 5G', 121),
+                ('Samsung Galaxy S22', 120),
+                ('Samsung Galaxy Z Fold3', 120),
+                ('Honor Magic Vs', 119),
+                ('Sony Xperia 5 IV', 119),
+                ('Samsung Galaxy S25 FE', 118),
+                ('Sony Xperia 5 V', 118),
+                ('Apple iPhone 12', 117),
+                ('Samsung Galaxy S21 Ultra', 117),
+                ('Apple iPhone 11', 116),
+                ('Samsung Galaxy S21+', 115),
+                ('Xiaomi 12T', 115),
+                ('Nothing Phone(1)', 114),
+                ('Samsung Galaxy A56', 114),
+                ('OnePlus 8 Pro', 113),
+                ('Xiaomi Redmi Note 12 Pro+ 5G', 113),
+                ('Samsung Galaxy Z Flip4', 112),
+                ('Samsung Galaxy Z Flip3', 111),
+                ('Google Pixel 5', 109),
+                ('Samsung Galaxy A55 5G', 108),
+                ('Samsung Galaxy A54 5G', 107),
+                ('Oppo Find X3 Neo', 106),
+                ('Sony Xperia 1 III', 105),
+                ('Samsung Galaxy A35 5G', 104),
+                ('Motorola Edge 40 Neo', 103),
+                ('Huawei P40', 102),
+                ('Black Shark 5 Pro', 101),
+                ('Apple iPhone SE (2022)', 100),
+                ('Motorola Moto g75 5G', 96),
+                ('ZTE Axon 30 Ultra', 96),
+                ('Oppo Find X5 Lite', 95),
+                ('Oppo Reno4 5G', 94),
+                ('Oppo A94 5G', 93),
+                ('Vivo X80 Lite 5G', 93),
+                ('Motorola Razr 50', 92),
+                ('Samsung Galaxy A25 5G', 92),
+                ('Samsung Galaxy A34 5G', 92),
+                ('Samsung Galaxy A72', 92),
+                ('Xiaomi Redmi Note 13 5G', 91),
+                ('Oppo Reno6 5G', 89),
+                ('Motorola Moto g85 5G', 88),
+                ('Samsung Galaxy A52s 5G', 88),
+                ('Samsung Galaxy A52 5G', 88),
+                ('Honor 200 Lite', 86),
+                ('Motorola moto g54 5G', 85),
+                ('Samsung Galaxy A16 LTE', 85),
+                ('Samsung Galaxy A33 5G', 85),
+                ('Honor Magic6 Lite', 84),
+                ('OnePlus Nord CE 5G', 84),
+                ('Xiaomi Redmi Note 14', 84),
+                ('Samsung Galaxy A15 5G', 83),
+                ('Vivo Y76 5G', 83),
+                ('Samsung Galaxy A15 LTE', 81),
+                ('Honor 90 Smart', 79),
+                ('Samsung Galaxy A53 5G', 79),
+                ('Sony Xperia 10 V', 78),
+                ('Xiaomi Redmi Note 11 Pro 5G', 78),
+                ('Samsung Galaxy A16 5G', 77),
+                ('TCL 40R 5G', 76),
+                ('Motorola Moto G35 5G', 75),
+                ('Realme 9i 5G', 75),
+                ('Xiaomi Redmi Note 13', 75),
+                ('Honor Magic5 Lite 5G', 74),
+                ('Honor 90 Lite', 73),
+                ('Samsung Galaxy A23 5G', 70),
+                ('Fairphone 4', 69),
+                ('Oppo A78 5G', 69),
+                ('Xiaomi Redmi Note 12 5G', 69),
+                ('Motorola Moto G53 5G', 68),
+                ('Motorola moto g34 5G', 67),
+                ('Samsung Galaxy A14 5G', 67),
+                ('Motorola Moto G62 5G', 66),
+                ('Xiaomi Redmi Note 11S 5G', 65),
+                ('Oppo Reno8 Lite 5G', 64),
+                ('Sony Xperia 10 IV', 63),
+                ('Xiaomi Redmi 14C', 63),
+                ('Xiaomi Redmi 13C', 63),
+                ('Xiaomi Redmi 12 5G', 63),
+                ('Xiaomi Redmi Note 12', 63),
+                ('Honor Magic4 Lite 5G', 61),
+                ('Honor X7', 61),
+                ('Xiaomi Redmi 13C 5G', 60),
+                ('Xiaomi Redmi Note 11', 60),
+                ('Crosscall Stellar-M6', 59),
+                ('Honor 70 Lite', 58),
+                ('Honor 200 Smart', 55),
+                ('Motorola Moto G23', 54),
+                ('Oppo A77 5G', 53),
+                ('Honor X8 5G', 52),
+                ('TCL 406', 52),
+                ('Xiaomi Redmi 10 2022', 51),
+                ('Crosscall Action-X5', 50),
+                ('Samsung Galaxy A22 5G', 48),
+                ('Crosscall Core-Z5', 47),
+                ('Oppo A57', 46),
+                ('Oppo A16s 5G', 46),
+                ('Samsung Galaxy A05s', 45),
+                ('Xiaomi Redmi A3', 45),
+                ('Xiaomi Redmi 12C', 45)
+            ]
+            
+            try:
+                for model, score in smartphone_data:
+                    cursor.execute("INSERT INTO dxomark (model, score) VALUES (?, ?)", (model, score))
+                conn.commit()
+                print(f"Успешно добавлено {len(smartphone_data)} записей в таблицу dxomark")
+            except Exception as e:
+                print(f"Ошибка при вставке данных: {e}")
+                conn.rollback()
+        
         conn.commit()
         print("База данных MS SQL Server инициализирована")
     
@@ -355,42 +910,117 @@ class MSSQLDatabase(DatabaseInterface):
         # Конвертируем numpy типы
         data = convert_numpy_types(data)
         
-        # Удаляем поля с датами
-        cleaned_data = {k: v for k, v in data.items() }
+        # ОТЛАДКА: Выводим данные перед сохранением
+        # print("\n[DEBUG MSSQL save_analysis] Полученные данные:")
+        # print(f"  sharpness_score: {data.get('sharpness_score')} (тип: {type(data.get('sharpness_score'))})")
+        # print(f"  noise_level: {data.get('noise_level')} (тип: {type(data.get('noise_level'))})")
+        # print(f"  dynamic_range: {data.get('dynamic_range')} (тип: {type(data.get('dynamic_range'))})")
+        # print(f"  brightness: {data.get('brightness')}")
+        # print(f"  contrast: {data.get('contrast')}")
+        # print(f"  saturation: {data.get('saturation')}")
+        # print(f"  exposure_score: {data.get('exposure_score')}")
+        # print(f"  composition_score: {data.get('composition_score')}")
+        # print(f"  overall_score: {data.get('overall_score')}")
+        # print(f"  iso: {data.get('iso')}")
+        # print(f"  camera_model: {data.get('camera_model')}")
         
-        # Очищаем данные
-        for key, value in list(cleaned_data.items()):
+        # Подготавливаем данные для сохранения
+        save_data = {}
+        for key, value in data.items():
             if value is None:
-                continue
-            elif isinstance(value, float):
-                if np.isnan(value) or np.isinf(value):
-                    cleaned_data[key] = None
-            elif isinstance(value, (int, np.int32, np.int64)):
-                cleaned_data[key] = int(value)
+                save_data[key] = None
+            elif isinstance(value, float) and (np.isnan(value) or np.isinf(value)):
+                save_data[key] = None
+            else:
+                save_data[key] = value
         
-        cursor.execute("SELECT id FROM analysis_results WHERE file_path = ?", (cleaned_data['file_path'],))
+        # Убеждаемся что все числовые метрики имеют правильный тип
+        numeric_fields = ['sharpness_score', 'noise_level', 'dynamic_range', 'brightness', 
+                        'contrast', 'saturation', 'exposure_score', 'composition_score', 'overall_score']
+        
+        for field in numeric_fields:
+            if field in save_data and save_data[field] is not None:
+                try:
+                    save_data[field] = float(save_data[field])
+                except (TypeError, ValueError):
+                    save_data[field] = None
+        
+        # Проверяем существование записи
+        cursor.execute("SELECT id FROM analysis_results WHERE file_path = ?", (save_data.get('file_path'),))
         existing = cursor.fetchone()
         
         if existing:
             analysis_id = existing[0]
+            if 'id' in save_data:
+                del save_data['id']
             
-            if 'id' in cleaned_data:
-                del cleaned_data['id']
-            
-            if cleaned_data:
-                set_clause = ", ".join([f"{k} = ?" for k in cleaned_data.keys()])
-                values = list(cleaned_data.values()) + [analysis_id]
+            if save_data:
+                # Формируем SET clause
+                set_clause = ", ".join([f"{k} = ?" for k in save_data.keys()])
+                values = list(save_data.values()) + [analysis_id]
+                
+                # ОТЛАДКА: Выводим запрос
+                # print(f"\n[DEBUG MSSQL save_analysis] UPDATE query:")
+                # print(f"  SET: {set_clause}")
+                # print(f"  VALUES: {values[:5]}...")  # Показываем первые 5 значений
+                
                 cursor.execute(f"UPDATE analysis_results SET {set_clause} WHERE id = ?", values)
         else:
-            columns = ", ".join(cleaned_data.keys())
-            placeholders = ", ".join(["?"] * len(cleaned_data))
-            cursor.execute(f"INSERT INTO analysis_results ({columns}) VALUES ({placeholders})", list(cleaned_data.values()))
+            # Список всех полей, которые есть в таблице
+            all_fields = [
+                'file_path', 'filename', 'file_size', 'image_width', 'image_height',
+                'sharpness_score', 'noise_level', 'brightness', 'contrast', 'saturation',
+                'dynamic_range', 'avg_red', 'avg_green', 'avg_blue', 'exposure_score',
+                'composition_score', 'overall_score', 'user_rating', 'user_tags', 'user_notes',
+                'camera_make', 'camera_model', 'iso', 'exposure_time', 'aperture',
+                'focal_length', 'dxomark_score'
+            ]
+            
+            # Берем только те поля, которые есть в save_data
+            insert_fields = [f for f in all_fields if f in save_data and save_data[f] is not None]
+            insert_values = [save_data[f] for f in insert_fields]
+            
+            columns = ", ".join(insert_fields)
+            placeholders = ", ".join(["?"] * len(insert_fields))
+            
+            # ОТЛАДКА: Выводим запрос
+            # print(f"\n[DEBUG MSSQL save_analysis] INSERT query:")
+            # print(f"  COLUMNS: {columns}")
+            # print(f"  VALUES: {insert_values[:5]}...")  # Показываем первые 5 значений
+            
+            cursor.execute(f"""
+                INSERT INTO analysis_results ({columns}) 
+                VALUES ({placeholders})
+            """, insert_values)
             
             cursor.execute("SELECT SCOPE_IDENTITY()")
             row = cursor.fetchone()
             analysis_id = int(row[0]) if row and row[0] is not None else 0
         
         conn.commit()
+        
+        # ОТЛАДКА: Проверяем что сохранилось
+        # cursor.execute("""
+        #     SELECT sharpness_score, noise_level, dynamic_range, brightness, 
+        #         contrast, saturation, exposure_score, composition_score, overall_score
+        #     FROM analysis_results WHERE id = ?
+        # """, (analysis_id,))
+        # saved = cursor.fetchone()
+        
+        # if saved:
+        #     print(f"\n[DEBUG MSSQL save_analysis] Проверка сохранения для ID={analysis_id}:")
+        #     print(f"  sharpness_score: {saved[0]}")
+        #     print(f"  noise_level: {saved[1]}")
+        #     print(f"  dynamic_range: {saved[2]}")
+        #     print(f"  brightness: {saved[3]}")
+        #     print(f"  contrast: {saved[4]}")
+        #     print(f"  saturation: {saved[5]}")
+        #     print(f"  exposure_score: {saved[6]}")
+        #     print(f"  composition_score: {saved[7]}")
+        #     print(f"  overall_score: {saved[8]}")
+        # else:
+        #     print(f"\n[DEBUG MSSQL save_analysis] НЕ УДАЛОСЬ ПОЛУЧИТЬ ДАННЫЕ ДЛЯ ID={analysis_id}")
+        
         return analysis_id
     
     def get_analysis(self, analysis_id: int) -> Optional[Dict[str, Any]]:
@@ -407,16 +1037,41 @@ class MSSQLDatabase(DatabaseInterface):
     def get_all_analyses(self, limit: int = 100, offset: int = 0, sort_by: str = "id") -> List[Dict[str, Any]]:
         conn = self._get_connection()
         cursor = conn.cursor()
-        cursor.execute(f"""
-            SELECT id, filename, file_path, overall_score, user_rating, 
-                   sharpness_score, noise_level, camera_model, iso
+        
+        # Запрашиваем ВСЕ метрики, включая color_score
+        query = f"""
+            SELECT 
+                id, filename, file_path, overall_score, user_rating, 
+                sharpness_score, noise_level, camera_model, iso, dxomark_score,
+                dynamic_range, brightness, contrast, saturation, exposure_score, composition_score,
+                avg_red, avg_green, avg_blue, file_size, image_width, image_height,
+                camera_make, exposure_time, aperture, focal_length, user_tags, user_notes
             FROM analysis_results 
             ORDER BY {sort_by} DESC 
             OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
-        """, (offset, limit))
+        """
+        cursor.execute(query, (offset, limit))
         
         columns = [desc[0] for desc in cursor.description]
-        return [dict(zip(columns, row)) for row in cursor.fetchall()]
+        results = []
+        for row in cursor.fetchall():
+            result = dict(zip(columns, row))
+            # Конвертируем None в подходящие значения для отображения
+            if result.get('dynamic_range') is None:
+                result['dynamic_range'] = 'N/A'
+            if result.get('brightness') is None:
+                result['brightness'] = 'N/A'
+            if result.get('contrast') is None:
+                result['contrast'] = 'N/A'
+            if result.get('saturation') is None:
+                result['saturation'] = 'N/A'
+            if result.get('exposure_score') is None:
+                result['exposure_score'] = 'N/A'
+            if result.get('composition_score') is None:
+                result['composition_score'] = 'N/A'
+            results.append(result)
+        
+        return results
     
     def update_rating(self, analysis_id: int, rating: int, notes: str = None, tags: str = None):
         conn = self._get_connection()
@@ -429,7 +1084,8 @@ class MSSQLDatabase(DatabaseInterface):
             updates["user_tags"] = tags
         
         set_clause = ", ".join([f"{k} = ?" for k in updates.keys()])
-        cursor.execute(f"UPDATE analysis_results SET {set_clause} WHERE id = ?", list(updates.values()) + [analysis_id])
+        cursor.execute(f"UPDATE analysis_results SET {set_clause} WHERE id = ?", 
+                     list(updates.values()) + [analysis_id])
         conn.commit()
     
     def delete_analysis(self, analysis_id: int):
@@ -444,12 +1100,20 @@ class MSSQLDatabase(DatabaseInterface):
         cursor = conn.cursor()
         
         stats = {}
+        
+        # Общее количество
         cursor.execute("SELECT COUNT(*) FROM analysis_results")
         stats['total_photos'] = cursor.fetchone()[0]
         
+        # Средние значения
         cursor.execute("""
-            SELECT AVG(overall_score), AVG(sharpness_score), AVG(noise_level), AVG(user_rating)
-            FROM analysis_results WHERE overall_score IS NOT NULL
+            SELECT 
+                AVG(overall_score), 
+                AVG(sharpness_score), 
+                AVG(noise_level), 
+                AVG(user_rating)
+            FROM analysis_results 
+            WHERE overall_score IS NOT NULL
         """)
         row = cursor.fetchone()
         stats['avg_overall_score'] = round(row[0], 2) if row[0] else 0
@@ -457,18 +1121,48 @@ class MSSQLDatabase(DatabaseInterface):
         stats['avg_noise'] = round(row[2], 2) if row[2] else 0
         stats['avg_user_rating'] = round(row[3], 2) if row[3] else 0
         
+        # Топ камер
         cursor.execute("""
             SELECT camera_model, COUNT(*) as count 
             FROM analysis_results 
             WHERE camera_model IS NOT NULL AND camera_model != ''
-            GROUP BY camera_model ORDER BY count DESC
+            GROUP BY camera_model 
+            ORDER BY count DESC
             OFFSET 0 ROWS FETCH NEXT 5 ROWS ONLY
         """)
         rows = cursor.fetchall()
-        columns = [desc[0] for desc in cursor.description]
-        stats['top_cameras'] = [dict(zip(columns, row)) for row in rows]
+        stats['top_cameras'] = [{'camera_model': row[0], 'count': row[1]} for row in rows]
+        
+        # DxOMark статистика
+        try:
+            cursor.execute("""
+                SELECT AVG(CAST(dxomark_score AS FLOAT)), MAX(dxomark_score), MIN(dxomark_score)
+                FROM analysis_results 
+                WHERE dxomark_score IS NOT NULL
+            """)
+            row = cursor.fetchone()
+            stats['avg_dxomark'] = round(row[0], 1) if row and row[0] else 0
+            stats['max_dxomark'] = row[1] if row and row[1] else 0
+            stats['min_dxomark'] = row[2] if row and row[2] else 0
+        except Exception:
+            stats['avg_dxomark'] = 0
+            stats['max_dxomark'] = 0
+            stats['min_dxomark'] = 0
         
         return stats
+    
+    def search_photos(self, query: str) -> List[Dict[str, Any]]:
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT id, filename, file_path, overall_score, user_rating, user_tags, user_notes
+            FROM analysis_results 
+            WHERE filename LIKE ? OR user_tags LIKE ? OR user_notes LIKE ?
+            ORDER BY id DESC
+        """, (f"%{query}%", f"%{query}%", f"%{query}%"))
+        
+        columns = [desc[0] for desc in cursor.description]
+        return [dict(zip(columns, row)) for row in cursor.fetchall()]
     
     def add_category(self, name: str, description: str = "") -> Optional[int]:
         conn = self._get_connection()
@@ -496,23 +1190,11 @@ class MSSQLDatabase(DatabaseInterface):
         """, (photo_id, category_id, photo_id, category_id))
         conn.commit()
     
-    def search_photos(self, query: str) -> List[Dict[str, Any]]:
-        conn = self._get_connection()
-        cursor = conn.cursor()
-        cursor.execute("""
-            SELECT id, filename, file_path, overall_score, user_rating, user_tags, user_notes
-            FROM analysis_results 
-            WHERE filename LIKE ? OR user_tags LIKE ? OR user_notes LIKE ?
-            ORDER BY id DESC
-        """, (f"%{query}%", f"%{query}%", f"%{query}%"))
-        
-        columns = [desc[0] for desc in cursor.description]
-        return [dict(zip(columns, row)) for row in cursor.fetchall()]
-    
     def close(self):
         if self.conn:
             self.conn.close()
             print("Соединение с MS SQL Server закрыто")
+
 
 class Database:   
     def __init__(self, db_type: str = "sqlite", **kwargs):
