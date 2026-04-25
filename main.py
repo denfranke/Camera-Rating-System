@@ -63,6 +63,9 @@ def safe_input(prompt: str, default: str = None) -> str:
     except KeyboardInterrupt:
         print("\n")
         return None
+    except EOFError:
+        print("\n")
+        return None
 
 
 def safe_int_input(prompt: str, default: int = None) -> int:
@@ -261,65 +264,259 @@ def analyze_photo(db: Database, analyzer: ImageAnalyzer):
         wait_for_enter()
         return
     
-    print(f"\nАнализ: {os.path.basename(file_path)}")
-    print("Пожалуйста, подождите...\n")
+    print(f"\n📷 Анализ: {os.path.basename(file_path)}")
+    print("⏳ Пожалуйста, подождите...\n")
     
     try:
+        # Анализируем изображение
         result = analyzer.analyze(file_path)
-        # --- DXOMARK ---
-        dxo = DxOMarkService()
-        score = dxo.get_score(result.get('camera_model'))
         
-        if score:
-            result['dxomark_score'] = score
+        # --- ИНТЕГРАЦИЯ DxOMark ---
+        dxo_service = DxOMarkService(db.db_path if hasattr(db, 'db_path') else "photo_analysis.db")
+        camera_model = result.get('camera_model')
+        dxomark_score = None
+        
+        if camera_model and camera_model != 'Unknown':
+            dxomark_score = dxo_service.get_score(camera_model)
+            if dxomark_score:
+                result['dxomark_score'] = dxomark_score
+        else:
+            # Если модель не определена, предлагаем выбрать вручную
+            print("\n" + "=" * 60)
+            print("📷 МОДЕЛЬ КАМЕРЫ НЕ ОПРЕДЕЛЕНА")
+            print("=" * 60)
+            print("\nХотите вручную указать модель камеры для получения DxOMark оценки?")
+            manual_input = safe_input("Введите модель (например 'iPhone 15 Pro') или Enter для пропуска: ")
+            
+            if manual_input:
+                # Ищем введенную модель в базе DxOMark
+                dxomark_score = dxo_service.get_score(manual_input)
+                if dxomark_score:
+                    result['dxomark_score'] = dxomark_score
+                    result['camera_model'] = manual_input  # Сохраняем вручную указанную модель
+                    print(f"  ✅ Найдена оценка DxOMark: {dxomark_score}")
+                else:
+                    print(f"  ❌ Модель '{manual_input}' не найдена в базе DxOMark")                   
+                    
+        
+        # Сохраняем результат в БД
         analysis_id = db.save_analysis(result)
         
-        print("Анализ завершен!\n")
-        print("=" * 50)
-        print("РЕЗУЛЬТАТЫ АНАЛИЗА:")
-        print("=" * 50)
+        # --- ВЫВОД РЕЗУЛЬТАТОВ ---
+        print("\n" + "=" * 60)
+        print("📊 РЕЗУЛЬТАТЫ АНАЛИЗА")
+        print("=" * 60)
         
+        # Общая оценка
         overall = result.get('overall_score', 0)
         if overall >= 80:
-            rating = "ОТЛИЧНО"
+            rating_emoji = "🏆"
+            rating_text = "ОТЛИЧНО"
         elif overall >= 60:
-            rating = "ХОРОШО"
+            rating_emoji = "✅"
+            rating_text = "ХОРОШО"
         elif overall >= 40:
-            rating = "СРЕДНЕ"
+            rating_emoji = "⚠️"
+            rating_text = "СРЕДНЕ"
         else:
-            rating = "ПЛОХО"
+            rating_emoji = "❌"
+            rating_text = "ПЛОХО"
         
-        print(f"  ID в базе: {analysis_id}")
-        print(f"  Файл: {result.get('filename', 'Unknown')}")
-        print(f"  Общая оценка: {overall:.1f}/100 {rating}")
-        print()
-        print("  Метрики качества:")
-        print(f"    Резкость: {result.get('sharpness_score', 0):.1f}")
-        print(f"    Шум: {result.get('noise_level', 0):.1f}")
-        print(f"    Динамический диапазон: {result.get('dynamic_range', 0):.1f} EV")
-        print(f"    Яркость: {result.get('brightness', 0):.2f}")
-        print(f"    Насыщенность: {result.get('saturation', 0):.2f}")
-        print()
+        print(f"\n{rating_emoji} Общая оценка: {overall:.1f}/100 [{rating_text}]")
+        print(f"🆔 ID в базе: {analysis_id}")
+        print(f"📁 Файл: {result.get('filename', 'Unknown')}")
         
+        # Метрики качества с визуализацией
+        print("\n" + "-" * 40)
+        print("📈 МЕТРИКИ КАЧЕСТВА:")
+        print("-" * 40)
+        
+        sharpness = result.get('sharpness_score', 0)
+        sharpness_bar = "█" * int(sharpness / 10) + "░" * (10 - int(sharpness / 10))
+        print(f"  Резкость:        {sharpness:5.1f}  {sharpness_bar}")
+        
+        noise = result.get('noise_level', 0)
+        noise_bar = "█" * int(noise / 10) + "░" * (10 - int(noise / 10))
+        print(f"  Шум:             {noise:5.1f}  {noise_bar} (чем меньше, тем лучше)")
+        
+        dynamic_range = result.get('dynamic_range', 0)
+        dr_bar = "█" * int(dynamic_range / 1.2) + "░" * (10 - int(dynamic_range / 1.2))
+        print(f"  Динамический:    {dynamic_range:5.1f} EV {dr_bar}")
+        
+        brightness = result.get('brightness', 0) * 100
+        brightness_bar = "█" * int(brightness / 10) + "░" * (10 - int(brightness / 10))
+        print(f"  Яркость:         {brightness:5.1f}% {brightness_bar}")
+        
+        contrast = result.get('contrast', 0) * 100
+        contrast_bar = "█" * int(contrast / 10) + "░" * (10 - int(contrast / 10))
+        print(f"  Контраст:        {contrast:5.1f}% {contrast_bar}")
+        
+        saturation = result.get('saturation', 0) * 100
+        saturation_bar = "█" * int(saturation / 10) + "░" * (10 - int(saturation / 10))
+        print(f"  Насыщенность:    {saturation:5.1f}% {saturation_bar}")
+        
+        exposure = result.get('exposure_score', 0) * 100
+        exposure_bar = "█" * int(exposure / 10) + "░" * (10 - int(exposure / 10))
+        print(f"  Экспозиция:      {exposure:5.1f}% {exposure_bar}")
+        
+        composition = result.get('composition_score', 0) * 100
+        composition_bar = "█" * int(composition / 10) + "░" * (10 - int(composition / 10))
+        print(f"  Композиция:      {composition:5.1f}% {composition_bar}")
+        
+        # Информация о камере
         if result.get('camera_model'):
-            print("  Информация о камере:")
-            print(f"    Модель: {result.get('camera_model', 'N/A')}")
+            print("\n" + "-" * 40)
+            print("📷 ИНФОРМАЦИЯ О КАМЕРЕ:")
+            print("-" * 40)
             
-            if result.get('dxomark_score'):
-                print(f"    DxOMark: {result.get('dxomark_score')}")
-           
-            print(f"    ISO: {result.get('iso', 'N/A')}")
-            print(f"    Выдержка: {result.get('exposure_time', 'N/A')}")
-            print(f"    Диафрагма: {result.get('aperture', 'N/A')}")
-            print(f"    Фокусное: {result.get('focal_length', 'N/A')}mm")
-            print()
+            print(f"  Модель:    {result.get('camera_make', '')} {result.get('camera_model', 'N/A')}".strip())
+            
+            # DxOMark оценка с визуализацией
+            if dxomark_score:
+                print(f"\n  🏆 DxOMark: {dxomark_score}")
+                
+                # Интерпретация DxOMark
+                if dxomark_score >= 160:
+                    dxo_rating = "🌟 Элитная камера (топ-уровень)"
+                    dxo_emoji = "🏆"
+                elif dxomark_score >= 150:
+                    dxo_rating = "⭐ Отличная камера"
+                    dxo_emoji = "⭐"
+                elif dxomark_score >= 140:
+                    dxo_rating = "👍 Очень хорошая камера"
+                    dxo_emoji = "👍"
+                elif dxomark_score >= 120:
+                    dxo_rating = "✅ Хорошая камера"
+                    dxo_emoji = "✅"
+                elif dxomark_score >= 100:
+                    dxo_rating = "👌 Средняя камера"
+                    dxo_emoji = "👌"
+                else:
+                    dxo_rating = "📱 Бюджетная камера"
+                    dxo_emoji = "📱"
+                
+                print(f"  {dxo_emoji} Рейтинг: {dxo_rating}")
+                
+                # Сравнение с вашей оценкой
+                if overall > 0:
+                    diff = overall - dxomark_score
+                    if abs(diff) < 10:
+                        print(f"  📊 Оценка близка к DxOMark (±{abs(diff):.1f})")
+                    elif diff > 0:
+                        print(f"  📈 Оценка выше DxOMark на {diff:.1f} баллов")
+                    elif diff < 0:
+                        print(f"  📉 Оценка ниже DxOMark на {abs(diff):.1f} баллов")
+            else:
+                print(f"\n  ❓ DxOMark: данные отсутствуют для этой модели")
+                print(f"  💡 Совет: попробуйте указать полную модель камеры в EXIF")
+            
+            # # Технические параметры
+            # print(f"\n  Технические параметры:")
+            # if result.get('iso'):
+            #     print(f"    ISO:          {result['iso']}")
+            # if result.get('exposure_time'):
+            #     print(f"    Выдержка:     {result['exposure_time']} сек")
+            # if result.get('aperture'):
+            #     print(f"    Диафрагма:    f/{result['aperture']:.1f}")
+            # if result.get('focal_length'):
+            #     print(f"    Фокусное:     {result['focal_length']} mm")
         
-        print(f"  Размер: {result.get('image_width', 0)}x{result.get('image_height', 0)} px")
-        print(f"  Размер файла: {result.get('file_size', 0) // 1024} KB")
-        print("=" * 50)
+        # Информация о файле
+        print("\n" + "-" * 40)
+        print("ℹ️ ИНФОРМАЦИЯ О ФАЙЛЕ:")
+        print("-" * 40)
+        print(f"  Размер:    {result.get('image_width', 0)} x {result.get('image_height', 0)} px")
+        print(f"  Объём:     {result.get('file_size', 0) // 1024} KB")
+        
+        # Цветовой баланс
+        avg_r = result.get('avg_red', 0)
+        avg_g = result.get('avg_green', 0)
+        avg_b = result.get('avg_blue', 0)
+        print(f"\n  Цветовой баланс:")
+        print(f"    R: {avg_r:.2f}  G: {avg_g:.2f}  B: {avg_b:.2f}")
+        
+        # Проверка цветового сдвига
+        if abs(avg_r - avg_g) > 0.1 or abs(avg_b - avg_g) > 0.1:
+            print(f"    ⚠️ Заметен цветовой сдвиг")
+        else:
+            print(f"    ✅ Нейтральный баланс")
+        
+        # Рекомендации
+        print("\n" + "=" * 60)
+        print("💡 РЕКОМЕНДАЦИИ:")
+        print("=" * 60)
+        
+        recommendations = []
+        
+        if sharpness < 50:
+            recommendations.append("  • 🔍 Низкая резкость - используйте штатив или улучшите фокусировку")
+        elif sharpness > 85:
+            recommendations.append("  • ✨ Отличная резкость - изображение очень детализированное")
+        
+        if noise > 40:
+            recommendations.append("  • 🌫️ Высокий уровень шума - снизьте ISO или используйте шумоподавление")
+        
+        if dynamic_range < 5:
+            recommendations.append("  • 🌅 Низкий динамический диапазон - избегайте сцен с большим контрастом")
+        elif dynamic_range > 9:
+            recommendations.append("  • 🌈 Отличный динамический диапазон - хорошая детализация в тенях и светах")
+        
+        if brightness < 0.3:
+            recommendations.append("  • 🌑 Фото слишком темное - увеличьте экспозицию")
+        elif brightness > 0.8:
+            recommendations.append("  • ☀️ Фото пересвечено - уменьшите экспозицию")
+        
+        if saturation < 0.3:
+            recommendations.append("  • 🎨 Низкая насыщенность - фото выглядит блеклым")
+        elif saturation > 0.8:
+            recommendations.append("  • 🎨 Высокая насыщенность - цвета могут быть неестественными")
+        
+        if exposure < 0.4:
+            recommendations.append("  • 📸 Недоэкспонировано - добавьте +0.7 EV")
+        elif exposure > 0.8:
+            recommendations.append("  • 📸 Переэкспонировано - уменьшите на -0.7 EV")
+        
+        if not recommendations:
+            recommendations.append("  • 👍 Отличное фото! Технические параметры в норме")
+        
+        for rec in recommendations:
+            print(rec)
+        
+        # Общая оценка качества
+        print("\n" + "=" * 60)
+        quality_score = overall
+        if quality_score >= 85:
+            quality_text = "🏆 ПРЕВОСХОДНОЕ КАЧЕСТВО"
+            quality_color = "\033[92m"  # Зеленый
+        elif quality_score >= 70:
+            quality_text = "✅ ХОРОШЕЕ КАЧЕСТВО"
+            quality_color = "\033[94m"  # Синий
+        elif quality_score >= 50:
+            quality_text = "⚠️ УДОВЛЕТВОРИТЕЛЬНОЕ"
+            quality_color = "\033[93m"  # Желтый
+        else:
+            quality_text = "❌ ТРЕБУЕТ УЛУЧШЕНИЯ"
+            quality_color = "\033[91m"  # Красный
+        
+        print(f"{quality_color}ИТОГО: {quality_text}\033[0m")
+        
+        # Предложение оценить фото
+        # print("\n" + "=" * 60)
+        # rate_now = safe_input("Хотите оценить это фото? (да/нет): ")
+        # if rate_now and rate_now.lower() in ['да', 'yes', 'y', 'д']:
+        #     rating = safe_int_input("Ваша оценка (1-5): ")
+        #     if rating and 1 <= rating <= 5:
+        #         notes = safe_input("Заметки (Enter для пропуска): ")
+        #         tags = safe_input("Теги (Enter для пропуска): ")
+        #         db.update_rating(analysis_id, rating, notes if no7tes else None, tags if tags else None)
+        #         print("\n✅ Оценка сохранена!")
+        
+        # print("\n" + "=" * 60)
         
     except Exception as e:
-        print(f"Ошибка при анализе: {str(e)}")
+        print(f"\n❌ Ошибка при анализе: {str(e)}")
+        import traceback
+        traceback.print_exc()
     
     wait_for_enter()
 
@@ -333,6 +530,8 @@ def list_photos(db: Database):
         analyses = db.get_all_analyses(limit=100)
     except Exception as e:
         print(f"Ошибка получения данных: {e}")
+        import traceback
+        traceback.print_exc()
         wait_for_enter()
         return
     
@@ -340,36 +539,81 @@ def list_photos(db: Database):
         print("В базе данных нет фотографий.")
     else:
         print(f"Всего фото: {len(analyses)}\n")
-        print("-" * 110)
-        print(f"{'ID':<5} {'Файл':<35} {'Камера':<20} {'Оценка':<8} {'Резкость':<8} {'Шум':<8} {'ISO':<6}")
-        print("-" * 110)
+        
+        # Расширенный заголовок
+        print("-" * 160)
+        print(f"{'ID':<4} {'Файл':<20} {'Камера':<18} {'Оценка':<7} {'DxO':<5} "
+              f"{'Резк':<6} {'Шум':<6} {'ДР':<5} {'Ярк':<5} {'Конт':<6} "
+              f"{'Насыщ':<6} {'Эксп':<6} {'ISO':<5}")
+        print("-" * 160)
         
         for analysis in analyses:
             try:
+                pid = analysis.get('id', '?')
+                filename = str(analysis.get('filename', 'Unknown'))[:20]
+                camera = str(analysis.get('camera_model') or 'Unknown')[:18]
+                
+                # Общая оценка
                 overall = analysis.get('overall_score', 0) or 0
                 overall_str = f"{float(overall):.0f}%" if overall else "N/A"
-            except:
-                overall_str = "N/A"
-            
-            try:
-                sharpness = analysis.get('sharpness_score', 0) or 0
-                sharpness_str = f"{float(sharpness):.0f}" if sharpness else "N/A"
-            except:
-                sharpness_str = "N/A"
-            
-            try:
-                noise = analysis.get('noise_level', 0) or 0
-                noise_str = f"{float(noise):.1f}" if noise else "N/A"
-            except:
-                noise_str = "N/A"
-            
-            camera = str(analysis.get('camera_model') or 'Unknown')[:20]
-            filename = str(analysis.get('filename', 'Unknown'))[:35]
-            iso = str(analysis.get('iso') or 'N/A')
-            
-            print(f"{analysis['id']:<5} {filename:<35} {camera:<20} {overall_str:<8} {sharpness_str:<8} {noise_str:<8} {iso:<6}")
+                
+                # DxOMark
+                dxo = analysis.get('dxomark_score')
+                dxo_str = str(dxo) if dxo else "-"
+                
+                # Резкость
+                sharpness = analysis.get('sharpness_score')
+                sharpness_str = f"{float(sharpness):.1f}" if sharpness and sharpness != 'N/A' else "N/A"
+                
+                # Шум
+                noise = analysis.get('noise_level')
+                noise_str = f"{float(noise):.1f}" if noise and noise != 'N/A' else "N/A"
+                
+                # Динамический диапазон
+                dr = analysis.get('dynamic_range')
+                dr_str = f"{float(dr):.1f}" if dr and dr != 'N/A' else "N/A"
+                
+                # Яркость
+                brightness = analysis.get('brightness')
+                if brightness and brightness != 'N/A':
+                    brightness_str = f"{float(brightness) * 100:.0f}%"
+                else:
+                    brightness_str = "N/A"
+                
+                # Контраст
+                contrast = analysis.get('contrast')
+                if contrast and contrast != 'N/A':
+                    contrast_str = f"{float(contrast) * 100:.0f}%"
+                else:
+                    contrast_str = "N/A"
+                
+                # Насыщенность
+                saturation = analysis.get('saturation')
+                if saturation and saturation != 'N/A':
+                    saturation_str = f"{float(saturation) * 100:.0f}%"
+                else:
+                    saturation_str = "N/A"
+                
+                # Экспозиция
+                exposure = analysis.get('exposure_score')
+                if exposure and exposure != 'N/A':
+                    exposure_str = f"{float(exposure) * 100:.0f}%"
+                else:
+                    exposure_str = "N/A"
+                
+                # ISO
+                iso = analysis.get('iso')
+                iso_str = str(iso) if iso and iso != 'N/A' else "-"
+                
+                print(f"{pid:<4} {filename:<20} {camera:<18} {overall_str:<7} {dxo_str:<5} "
+                      f"{sharpness_str:<6} {noise_str:<6} {dr_str:<5} {brightness_str:<5} "
+                      f"{contrast_str:<6} {saturation_str:<6} {exposure_str:<6} {iso_str:<5}")
+                
+            except Exception as e:
+                print(f"Ошибка отображения: {e}")
+                continue
         
-        print("-" * 110)
+        print("-" * 160)
     
     wait_for_enter()
 
@@ -655,8 +899,9 @@ def main():
 if __name__ == "__main__":
     main()
 
-
-
+# 192.168.1.11
 # 42145
 # PhotoQualityAnalyzer
+
+
 # RawPhotos\img1.dng
