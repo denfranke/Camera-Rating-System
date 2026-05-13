@@ -2,6 +2,7 @@ import os
 import sys
 import json
 import signal
+import time
 from pathlib import Path
 
 from database import Database
@@ -12,7 +13,6 @@ from dxomark_service import DxOMarkService
 def signal_handler(sig, frame):
     print("\n\n👋 Прерывание работы. До свидания!")
     sys.exit(0)
-
 
 def load_config():
     config_file = "config.json"
@@ -48,11 +48,9 @@ def load_config():
         print(f"Создан файл конфигурации: {config_file}")
         return default_config
 
-
 def save_config(config):
     with open("config.json", "w", encoding='utf-8') as f:
         json.dump(config, f, indent=4, ensure_ascii=False)
-
 
 def safe_input(prompt: str, default: str = None) -> str:
     try:
@@ -67,7 +65,6 @@ def safe_input(prompt: str, default: str = None) -> str:
         print("\n")
         return None
 
-
 def safe_int_input(prompt: str, default: int = None) -> int:
     try:
         result = input(prompt).strip()
@@ -80,7 +77,6 @@ def safe_int_input(prompt: str, default: int = None) -> int:
     except ValueError:
         print("Введите число!")
         return safe_int_input(prompt, default)
-
 
 def configure_database():
     clear_screen()
@@ -199,17 +195,14 @@ def configure_database():
     
     return None
 
-
 def clear_screen():
     os.system('cls' if os.name == 'nt' else 'clear')
-
 
 def print_header():
     print("=" * 60)
     print("   PHOTO QUALITY ANALYZER - Анализ качества фотографий")
     print("=" * 60)
     print()
-
 
 def print_menu(db: Database):
     db_type = "SQLite" if db.db_type == "sqlite" else "MS SQL Server"
@@ -229,7 +222,6 @@ def print_menu(db: Database):
     print(" 0. Выход")
     print("-" * 40)
 
-
 def wait_for_enter():
     print("\nНажмите Enter для продолжения...")
     try:
@@ -238,7 +230,6 @@ def wait_for_enter():
         print("\n")
         return False
     return True
-
 
 def analyze_photo(db: Database, analyzer: ImageAnalyzer):
     clear_screen()
@@ -271,38 +262,243 @@ def analyze_photo(db: Database, analyzer: ImageAnalyzer):
         # Анализируем изображение
         result = analyzer.analyze(file_path)
         
-        # --- ИНТЕГРАЦИЯ DxOMark ---
+        # --- АВТОМАТИЧЕСКОЕ ОПРЕДЕЛЕНИЕ КАМЕРЫ И DxOMark ---
         dxo_service = DxOMarkService(db.db_path if hasattr(db, 'db_path') else "photo_analysis.db")
+        
+        # Получаем модель камеры из результата анализа
         camera_model = result.get('camera_model')
+        camera_make = result.get('camera_make')
         dxomark_score = None
         
+        print("\n" + "=" * 60)
+        print("📷 ОПРЕДЕЛЕНИЕ КАМЕРЫ")
+        print("=" * 60)
+        
+        # Флаг, была ли выбрана модель вручную
+        manual_model_selected = False
+        
         if camera_model and camera_model != 'Unknown':
+            # Показываем определённую модель
+            if camera_make:
+                print(f"  📱 Производитель: {camera_make}")
+            print(f"  📱 Модель: {camera_model}")
+            
+            # Пробуем найти DxOMark оценку
             dxomark_score = dxo_service.get_score(camera_model)
+            
+            # Если не нашли, пробуем с производителем
+            if not dxomark_score and camera_make:
+                full_name = f"{camera_make} {camera_model}"
+                print(f"  🔍 Пробуем найти: {full_name}")
+                dxomark_score = dxo_service.get_score(full_name)
+            
+            # Если нашли DxOMark оценку
             if dxomark_score:
                 result['dxomark_score'] = dxomark_score
-        else:
-            # Если модель не определена, предлагаем выбрать вручную
-            print("\n" + "=" * 60)
-            print("📷 МОДЕЛЬ КАМЕРЫ НЕ ОПРЕДЕЛЕНА")
-            print("=" * 60)
-            print("\nХотите вручную указать модель камеры для получения DxOMark оценки?")
-            manual_input = safe_input("Введите модель (например 'iPhone 15 Pro') или Enter для пропуска: ")
-            
-            if manual_input:
-                # Ищем введенную модель в базе DxOMark
-                dxomark_score = dxo_service.get_score(manual_input)
-                if dxomark_score:
-                    result['dxomark_score'] = dxomark_score
-                    result['camera_model'] = manual_input  # Сохраняем вручную указанную модель
-                    print(f"  ✅ Найдена оценка DxOMark: {dxomark_score}")
+                print(f"\n  ✅ Найдена оценка DxOMark: {dxomark_score}")
+                
+                # Интерпретация DxOMark
+                if dxomark_score >= 160:
+                    dxo_rating = "🌟 Элитная камера (топ-уровень)"
+                elif dxomark_score >= 150:
+                    dxo_rating = "⭐ Отличная камера"
+                elif dxomark_score >= 140:
+                    dxo_rating = "👍 Очень хорошая камера"
+                elif dxomark_score >= 120:
+                    dxo_rating = "✅ Хорошая камера"
+                elif dxomark_score >= 100:
+                    dxo_rating = "👌 Средняя камера"
                 else:
-                    print(f"  ❌ Модель '{manual_input}' не найдена в базе DxOMark")                   
+                    dxo_rating = "📱 Бюджетная камера"
+                print(f"  {dxo_rating}")
+            else:
+                # Модель определена, но не найдена в базе DxOMark
+                print(f"\n  ⚠️ Модель '{camera_model}' не найдена в базе DxOMark")
+                print("  🔧 Желаете указать модель вручную?")
+                
+                manual_choice = safe_input("\n  Введите 'y' для ручного выбора или Enter для пропуска: ")
+                
+                if manual_choice and manual_choice.lower() in ['y', 'yes', 'д', 'да']:
+                    # Получаем список моделей из базы DxOMark
+                    all_models = dxo_service.get_all_models()
                     
+                    if all_models:
+                        print("\n  📋 Доступные модели в базе DxOMark:")
+                        print("  " + "-" * 50)
+                        
+                        # Показываем модели постранично
+                        page_size = 15
+                        total_pages = (len(all_models) + page_size - 1) // page_size
+                        current_page = 0
+                        
+                        while True:
+                            start_idx = current_page * page_size
+                            end_idx = min(start_idx + page_size, len(all_models))
+                            
+                            print(f"\n  Страница {current_page + 1}/{total_pages}:")
+                            for i, model in enumerate(all_models[start_idx:end_idx], start=1):
+                                print(f"    {start_idx + i}. {model}")
+                            
+                            print(f"\n  Действия:")
+                            print(f"    • Введите номер модели для выбора")
+                            print(f"    • 'n' - следующая страница")
+                            print(f"    • 'p' - предыдущая страница")
+                            print(f"    • 's' - поиск по названию")
+                            print(f"    • Enter - пропустить")
+                            
+                            choice = safe_input("\n  Ваш выбор: ")
+                            
+                            if choice is None or choice == '':
+                                break
+                            elif choice.lower() == 'n' and current_page < total_pages - 1:
+                                current_page += 1
+                                continue
+                            elif choice.lower() == 'p' and current_page > 0:
+                                current_page -= 1
+                                continue
+                            elif choice.lower() == 's':
+                                search_term = safe_input("  Введите текст для поиска: ")
+                                if search_term:
+                                    search_results = [m for m in all_models if search_term.lower() in m.lower()]
+                                    if search_results:
+                                        print(f"\n  Найдено {len(search_results)} моделей:")
+                                        for i, model in enumerate(search_results[:20], start=1):
+                                            print(f"    {i}. {model}")
+                                        
+                                        idx_choice = safe_input("\n  Выберите номер модели (или Enter для отмены): ")
+                                        if idx_choice and idx_choice.isdigit():
+                                            idx = int(idx_choice) - 1
+                                            if 0 <= idx < len(search_results):
+                                                manual_model = search_results[idx]
+                                                dxomark_score = dxo_service.get_score(manual_model)
+                                                if dxomark_score:
+                                                    result['dxomark_score'] = dxomark_score
+                                                    result['camera_model'] = manual_model
+                                                    manual_model_selected = True
+                                                    print(f"\n  ✅ Выбрана модель: {manual_model} (DxOMark: {dxomark_score})")
+                                                    break
+                                    else:
+                                        print("  ❌ Ничего не найдено")
+                            elif choice.isdigit():
+                                idx = int(choice) - 1
+                                if 0 <= idx < len(all_models):
+                                    manual_model = all_models[idx]
+                                    dxomark_score = dxo_service.get_score(manual_model)
+                                    if dxomark_score:
+                                        result['dxomark_score'] = dxomark_score
+                                        result['camera_model'] = manual_model
+                                        manual_model_selected = True
+                                        print(f"\n  ✅ Выбрана модель: {manual_model} (DxOMark: {dxomark_score})")
+                                        break
+                            else:
+                                break
+                    else:
+                        print("  ❌ Нет доступных моделей в базе данных")
+        else:
+            # Модель не определилась автоматически
+            print("  ⚠️ Не удалось автоматически определить модель камеры из метаданных")
+            print("  💡 Возможные причины:")
+            print("     • Файл не содержит EXIF данных")
+            print("     • Недостаточно прав для чтения метаданных")
+            print("\n  🔧 Желаете указать модель вручную?")
+            
+            manual_choice = safe_input("\n  Введите 'y' для ручного выбора или Enter для пропуска: ")
+            
+            if manual_choice and manual_choice.lower() in ['y', 'yes', 'д', 'да']:
+                # Получаем список моделей из базы DxOMark
+                all_models = dxo_service.get_all_models()
+                
+                if all_models:
+                    print("\n  📋 Доступные модели в базе DxOMark:")
+                    print("  " + "-" * 50)
+                    
+                    # Постраничный вывод
+                    page_size = 15
+                    total_pages = (len(all_models) + page_size - 1) // page_size
+                    current_page = 0
+                    
+                    while True:
+                        start_idx = current_page * page_size
+                        end_idx = min(start_idx + page_size, len(all_models))
+                        
+                        print(f"\n  Страница {current_page + 1}/{total_pages}:")
+                        for i, model in enumerate(all_models[start_idx:end_idx], start=1):
+                            print(f"    {start_idx + i}. {model}")
+                        
+                        print(f"\n  Действия:")
+                        print(f"    • Введите номер модели для выбора")
+                        print(f"    • 'n' - следующая страница")
+                        print(f"    • 'p' - предыдущая страница")
+                        print(f"    • 's' - поиск по названию")
+                        print(f"    • Enter - пропустить")
+                        
+                        choice = safe_input("\n  Ваш выбор: ")
+                        
+                        if choice is None or choice == '':
+                            break
+                        elif choice.lower() == 'n' and current_page < total_pages - 1:
+                            current_page += 1
+                            continue
+                        elif choice.lower() == 'p' and current_page > 0:
+                            current_page -= 1
+                            continue
+                        elif choice.lower() == 's':
+                            search_term = safe_input("  Введите текст для поиска: ")
+                            if search_term:
+                                search_results = [m for m in all_models if search_term.lower() in m.lower()]
+                                if search_results:
+                                    print(f"\n  Найдено {len(search_results)} моделей:")
+                                    for i, model in enumerate(search_results[:20], start=1):
+                                        print(f"    {i}. {model}")
+                                    
+                                    idx_choice = safe_input("\n  Выберите номер модели (или Enter для отмены): ")
+                                    if idx_choice and idx_choice.isdigit():
+                                        idx = int(idx_choice) - 1
+                                        if 0 <= idx < len(search_results):
+                                            manual_model = search_results[idx]
+                                            dxomark_score = dxo_service.get_score(manual_model)
+                                            if dxomark_score:
+                                                result['dxomark_score'] = dxomark_score
+                                                result['camera_model'] = manual_model
+                                                manual_model_selected = True
+                                                print(f"\n  ✅ Выбрана модель: {manual_model} (DxOMark: {dxomark_score})")
+                                                break
+                                else:
+                                    print("  ❌ Ничего не найдено")
+                        elif choice.isdigit():
+                            idx = int(choice) - 1
+                            if 0 <= idx < len(all_models):
+                                manual_model = all_models[idx]
+                                dxomark_score = dxo_service.get_score(manual_model)
+                                if dxomark_score:
+                                    result['dxomark_score'] = dxomark_score
+                                    result['camera_model'] = manual_model
+                                    manual_model_selected = True
+                                    print(f"\n  ✅ Выбрана модель: {manual_model} (DxOMark: {dxomark_score})")
+                                    break
+                else:
+                    # Если список пуст, предлагаем ввести вручную
+                    print("  📝 База DxOMark пуста или недоступна")
+                    manual_model = safe_input("\n  Введите название модели вручную: ")
+                    if manual_model:
+                        dxomark_score = dxo_service.get_score(manual_model)
+                        if dxomark_score:
+                            result['dxomark_score'] = dxomark_score
+                            result['camera_model'] = manual_model
+                            manual_model_selected = True
+                            print(f"\n  ✅ Установлена модель: {manual_model} (DxOMark: {dxomark_score})")
+                        else:
+                            print(f"  ⚠️ Модель '{manual_model}' не найдена в базе DxOMark")
+                            print("  💡 Оценка DxOMark не будет добавлена")
+        
+        # Если модель была выбрана вручную, обновляем camera_model в result
+        if manual_model_selected:
+            print(f"\n  📱 Выбранная модель: {result.get('camera_model')}")
         
         # Сохраняем результат в БД
         analysis_id = db.save_analysis(result)
         
-        # --- ВЫВОД РЕЗУЛЬТАТОВ ---
+        # --- ВЫВОД РЕЗУЛЬТАТОВ АНАЛИЗА ---
         print("\n" + "=" * 60)
         print("📊 РЕЗУЛЬТАТЫ АНАЛИЗА")
         print("=" * 60)
@@ -364,62 +560,19 @@ def analyze_photo(db: Database, analyzer: ImageAnalyzer):
         print(f"  Композиция:      {composition:5.1f}% {composition_bar}")
         
         # Информация о камере
+        print("\n" + "-" * 40)
+        print("📷 ИНФОРМАЦИЯ О КАМЕРЕ:")
+        print("-" * 40)
+        
         if result.get('camera_model'):
-            print("\n" + "-" * 40)
-            print("📷 ИНФОРМАЦИЯ О КАМЕРЕ:")
-            print("-" * 40)
-            
             print(f"  Модель:    {result.get('camera_make', '')} {result.get('camera_model', 'N/A')}".strip())
-            
-            # DxOMark оценка с визуализацией
-            if dxomark_score:
-                print(f"\n  🏆 DxOMark: {dxomark_score}")
-                
-                # Интерпретация DxOMark
-                if dxomark_score >= 160:
-                    dxo_rating = "🌟 Элитная камера (топ-уровень)"
-                    dxo_emoji = "🏆"
-                elif dxomark_score >= 150:
-                    dxo_rating = "⭐ Отличная камера"
-                    dxo_emoji = "⭐"
-                elif dxomark_score >= 140:
-                    dxo_rating = "👍 Очень хорошая камера"
-                    dxo_emoji = "👍"
-                elif dxomark_score >= 120:
-                    dxo_rating = "✅ Хорошая камера"
-                    dxo_emoji = "✅"
-                elif dxomark_score >= 100:
-                    dxo_rating = "👌 Средняя камера"
-                    dxo_emoji = "👌"
-                else:
-                    dxo_rating = "📱 Бюджетная камера"
-                    dxo_emoji = "📱"
-                
-                print(f"  {dxo_emoji} Рейтинг: {dxo_rating}")
-                
-                # Сравнение с вашей оценкой
-                if overall > 0:
-                    diff = overall - dxomark_score
-                    if abs(diff) < 10:
-                        print(f"  📊 Оценка близка к DxOMark (±{abs(diff):.1f})")
-                    elif diff > 0:
-                        print(f"  📈 Оценка выше DxOMark на {diff:.1f} баллов")
-                    elif diff < 0:
-                        print(f"  📉 Оценка ниже DxOMark на {abs(diff):.1f} баллов")
-            else:
-                print(f"\n  ❓ DxOMark: данные отсутствуют для этой модели")
-                print(f"  💡 Совет: попробуйте указать полную модель камеры в EXIF")
-            
-            # # Технические параметры
-            # print(f"\n  Технические параметры:")
-            # if result.get('iso'):
-            #     print(f"    ISO:          {result['iso']}")
-            # if result.get('exposure_time'):
-            #     print(f"    Выдержка:     {result['exposure_time']} сек")
-            # if result.get('aperture'):
-            #     print(f"    Диафрагма:    f/{result['aperture']:.1f}")
-            # if result.get('focal_length'):
-            #     print(f"    Фокусное:     {result['focal_length']} mm")
+        else:
+            print(f"  Модель:    Не определена")
+        
+        if dxomark_score:
+            print(f"\n  🏆 DxOMark оценка: {dxomark_score}")
+        else:
+            print(f"\n  ❓ DxOMark оценка: не найдена для этой модели")
         
         # Информация о файле
         print("\n" + "-" * 40)
@@ -441,6 +594,20 @@ def analyze_photo(db: Database, analyzer: ImageAnalyzer):
         else:
             print(f"    ✅ Нейтральный баланс")
         
+        # Технические параметры (если есть)
+        if result.get('iso') or result.get('exposure_time') or result.get('aperture'):
+            print("\n" + "-" * 40)
+            print("🎯 ТЕХНИЧЕСКИЕ ПАРАМЕТРЫ:")
+            print("-" * 40)
+            if result.get('iso'):
+                print(f"  ISO:          {result['iso']}")
+            if result.get('exposure_time'):
+                print(f"  Выдержка:     {result['exposure_time']}")
+            if result.get('aperture'):
+                print(f"  Диафрагма:    f/{result['aperture']:.1f}")
+            if result.get('focal_length'):
+                print(f"  Фокусное:     {result['focal_length']} mm")
+        
         # Рекомендации
         print("\n" + "=" * 60)
         print("💡 РЕКОМЕНДАЦИИ:")
@@ -455,6 +622,8 @@ def analyze_photo(db: Database, analyzer: ImageAnalyzer):
         
         if noise > 40:
             recommendations.append("  • 🌫️ Высокий уровень шума - снизьте ISO или используйте шумоподавление")
+        elif noise < 15:
+            recommendations.append("  • ✨ Низкий уровень шума - отличное качество")
         
         if dynamic_range < 5:
             recommendations.append("  • 🌅 Низкий динамический диапазон - избегайте сцен с большим контрастом")
@@ -462,9 +631,11 @@ def analyze_photo(db: Database, analyzer: ImageAnalyzer):
             recommendations.append("  • 🌈 Отличный динамический диапазон - хорошая детализация в тенях и светах")
         
         if brightness < 0.3:
-            recommendations.append("  • 🌑 Фото слишком темное - увеличьте экспозицию")
+            recommendations.append("  • 🌑 Фото слишком тёмное - увеличьте экспозицию")
         elif brightness > 0.8:
             recommendations.append("  • ☀️ Фото пересвечено - уменьшите экспозицию")
+        elif 0.4 <= brightness <= 0.6:
+            recommendations.append("  • 💡 Правильная экспозиция - отличная работа")
         
         if saturation < 0.3:
             recommendations.append("  • 🎨 Низкая насыщенность - фото выглядит блеклым")
@@ -500,26 +671,12 @@ def analyze_photo(db: Database, analyzer: ImageAnalyzer):
         
         print(f"{quality_color}ИТОГО: {quality_text}\033[0m")
         
-        # Предложение оценить фото
-        # print("\n" + "=" * 60)
-        # rate_now = safe_input("Хотите оценить это фото? (да/нет): ")
-        # if rate_now and rate_now.lower() in ['да', 'yes', 'y', 'д']:
-        #     rating = safe_int_input("Ваша оценка (1-5): ")
-        #     if rating and 1 <= rating <= 5:
-        #         notes = safe_input("Заметки (Enter для пропуска): ")
-        #         tags = safe_input("Теги (Enter для пропуска): ")
-        #         db.update_rating(analysis_id, rating, notes if no7tes else None, tags if tags else None)
-        #         print("\n✅ Оценка сохранена!")
-        
-        # print("\n" + "=" * 60)
-        
     except Exception as e:
         print(f"\n❌ Ошибка при анализе: {str(e)}")
         import traceback
         traceback.print_exc()
     
     wait_for_enter()
-
 
 def list_photos(db: Database):
     clear_screen()
@@ -543,7 +700,7 @@ def list_photos(db: Database):
         # Расширенный заголовок
         print("-" * 160)
         print(f"{'ID':<4} {'Файл':<20} {'Камера':<18} {'Оценка':<7} {'DxO':<5} "
-              f"{'Резк':<6} {'Шум':<6} {'ДР':<5} {'Ярк':<5} {'Конт':<6} "
+              f"{'Резк':<6} {'Шум':<6} {'Дин. диап.':<5} {'Ярк':<5} {'Конт':<6} "
               f"{'Насыщ':<6} {'Эксп':<6} {'ISO':<5}")
         print("-" * 160)
         
@@ -617,7 +774,6 @@ def list_photos(db: Database):
     
     wait_for_enter()
 
-
 def search_photos(db: Database):
     clear_screen()
     print_header()
@@ -656,7 +812,6 @@ def search_photos(db: Database):
             print()
     
     wait_for_enter()
-
 
 def rate_photo(db: Database):
     clear_screen()
@@ -709,7 +864,6 @@ def rate_photo(db: Database):
     
     wait_for_enter()
 
-
 def show_statistics(db: Database):
     clear_screen()
     print_header()
@@ -740,7 +894,6 @@ def show_statistics(db: Database):
             print(f"  {cam['camera_model']:<25} {cam['count']:>3} фото {bar}")
     
     wait_for_enter()
-
 
 def add_category(db: Database):
     clear_screen()
@@ -785,7 +938,6 @@ def add_category(db: Database):
     
     wait_for_enter()
 
-
 def delete_photo(db: Database):
     clear_screen()
     print_header()
@@ -822,37 +974,58 @@ def delete_photo(db: Database):
     
     wait_for_enter()
 
-
 def main():
-    # Устанавливаем обработчик сигналов
     signal.signal(signal.SIGINT, signal_handler)
     
     analyzer = ImageAnalyzer()
     db = None
     
+    # Задержка для стабилизации драйверов
+    time.sleep(0.3)
+    
     config = load_config()
     db_config = config.get('database', {})
     db_type = db_config.get('type', 'sqlite')
     
-    try:
-        if db_type == 'sqlite':
+    # Если MS SQL Server - пробуем с повторными попытками
+    if db_type == 'mssql':
+        max_attempts = 2
+        for attempt in range(max_attempts):
+            try:
+                mssql_config = db_config.get('mssql', {})
+                db = Database(
+                    db_type='mssql',
+                    server=mssql_config.get('server', 'localhost'),
+                    port=mssql_config.get('port', 1433),
+                    database=mssql_config.get('database', 'photo_analyzer'),
+                    username=mssql_config.get('username') if not mssql_config.get('use_windows_auth', True) else None,
+                    password=mssql_config.get('password') if not mssql_config.get('use_windows_auth', True) else None,
+                    use_windows_auth=mssql_config.get('use_windows_auth', True)
+                )
+                break
+            except Exception as e:
+                print(f"⚠️ Попытка {attempt + 1} подключения к MS SQL: {e}")
+                if attempt < max_attempts - 1:
+                    print("🔄 Переключаемся на SQLite...")
+                    db = Database(db_type='sqlite', db_path='photo_analysis.db')
+                    db_type = 'sqlite'  # Меняем тип для последующих попыток
+                else:
+                    print("❌ Не удалось подключиться к MS SQL, используем SQLite")
+                    db = Database(db_type='sqlite', db_path='photo_analysis.db')
+    else:
+        # SQLite
+        try:
             sqlite_config = db_config.get('sqlite', {})
             db_path = sqlite_config.get('db_path', 'photo_analysis.db')
             db = Database(db_type='sqlite', db_path=db_path)
-        elif db_type == 'mssql':
-            mssql_config = db_config.get('mssql', {})
-            db = Database(
-                db_type='mssql',
-                server=mssql_config.get('server', 'localhost'),
-                port=mssql_config.get('port', 1433),
-                database=mssql_config.get('database', 'photo_analyzer'),
-                username=mssql_config.get('username') if not mssql_config.get('use_windows_auth', True) else None,
-                password=mssql_config.get('password') if not mssql_config.get('use_windows_auth', True) else None,
-                use_windows_auth=mssql_config.get('use_windows_auth', True)
-            )
-    except Exception as e:
-        print(f"Ошибка подключения: {e}")
-        db = configure_database()
+        except Exception as e:
+            print(f"⚠️ Ошибка SQLite: {e}")
+            db = None
+    
+    # Если всё ещё нет подключения - создаём новую SQLite
+    if db is None:
+        print("📁 Создаём новую SQLite базу данных...")
+        db = Database(db_type='sqlite', db_path='photo_analysis.db')
     
     while True:
         if db is None:
@@ -895,10 +1068,10 @@ def main():
             print("\nОшибка, введите число от 0 до 8.")
             wait_for_enter()
 
-
 if __name__ == "__main__":
     main()
 
+# 172.23.48.73
 # 192.168.1.11
 # 42145
 # PhotoQualityAnalyzer

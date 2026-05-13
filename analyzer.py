@@ -114,71 +114,65 @@ class ImageAnalyzer:
         }
     
     def _analyze_raw(self, file_path: str) -> Dict[str, Any]:
-        """Анализ RAW изображений"""
+        """Анализ RAW изображений с использованием сырых байер-данных"""
         try:
             with rawpy.imread(file_path) as raw:
-                # Получаем JPEG preview для анализа
-                try:
-                    # Постобработка RAW в RGB
-                    rgb = raw.postprocess(
-                        use_camera_wb=True,
-                        output_color=rawpy.ColorSpace.sRGB,
-                        gamma=(2.222, 4.5),
-                        no_auto_bright=False,
-                        auto_bright_thr=0.01
-                    )
-                    
-                    # Конвертируем в numpy array для анализа
-                    preview_pixels = np.array(rgb).astype(np.float32)
-                    
-                    # Получаем размеры
-                    height, width = preview_pixels.shape[:2]
-                    
-                    # Вычисляем ВСЕ метрики из RGB preview
-                    sharpness = self._calculate_sharpness(preview_pixels)
-                    noise = self._calculate_noise(preview_pixels)
-                    brightness = self._calculate_brightness(preview_pixels)
-                    contrast = self._calculate_contrast(preview_pixels)
-                    saturation = self._calculate_saturation(preview_pixels)
-                    dynamic_range = self._calculate_dynamic_range(preview_pixels)
-                    exposure_score = self._calculate_exposure_score(preview_pixels)
-                    composition_score = self._calculate_composition_score(preview_pixels)
-                    avg_r, avg_g, avg_b = self._get_color_averages(preview_pixels)
-                    
-                    # Общая оценка
-                    overall_score = self._calculate_overall_score({
-                        'sharpness': sharpness,
-                        'noise': noise,
-                        'brightness': brightness,
-                        'contrast': contrast,
-                        'saturation': saturation,
-                        'dynamic_range': dynamic_range,
-                        'exposure_score': exposure_score
-                    })
-                    
-                    print(f"  [DEBUG RAW] sharpness={sharpness}, noise={noise}, dr={dynamic_range}")
-                    
-                except Exception as e:
-                    print(f"  ⚠️ Ошибка при обработке preview: {e}")
-                    import traceback
-                    traceback.print_exc()
-                    # Значения по умолчанию
-                    height, width = 0, 0
-                    sharpness = 0.0
-                    noise = 0.0
-                    brightness = 0.5
-                    contrast = 0.5
-                    saturation = 0.5
-                    dynamic_range = 5.0
-                    exposure_score = 0.5
-                    composition_score = 0.5
-                    avg_r = avg_g = avg_b = 0.33
-                    overall_score = 0.0
+                # ============================================
+                # 1. Анализ сырых байер-данных (до демозаики)
+                # ============================================
+                raw_array = raw.raw_image_visible.astype(np.float32)
                 
-                # Основная информация о файле
+                # Получаем уровни черного и белого
+                black_level = getattr(raw, 'black_level_per_channel', [0])[0]
+                white_level = getattr(raw, 'white_level', 16383)
+                
+                # Метрики из сырых данных
+                raw_sharpness = self._calculate_raw_sharpness(raw_array)
+                raw_noise = self._calculate_raw_noise(raw_array, white_level)
+                raw_dynamic_range = self._calculate_raw_dynamic_range(raw_array, black_level, white_level)
+                
+                # ============================================
+                # 2. Получение RGB preview для цветовых метрик
+                # ============================================
+                rgb = raw.postprocess(
+                    use_camera_wb=True,
+                    output_color=rawpy.ColorSpace.sRGB,
+                    gamma=(2.222, 4.5),
+                    no_auto_bright=False,
+                    auto_bright_thr=0.01
+                )
+                
+                preview_pixels = np.array(rgb).astype(np.float32)
+                height, width = preview_pixels.shape[:2]
+                
+                # Цветовые метрики (только из RGB)
+                brightness = self._calculate_brightness(preview_pixels)
+                contrast = self._calculate_contrast(preview_pixels)
+                saturation = self._calculate_saturation(preview_pixels)
+                exposure_score = self._calculate_exposure_score(preview_pixels)
+                composition_score = self._calculate_composition_score(preview_pixels)
+                avg_r, avg_g, avg_b = self._get_color_averages(preview_pixels)
+                
+                # ============================================
+                # 3. Общая оценка (комбинируем метрики)
+                # ============================================
+                overall_score = self._calculate_overall_score_raw({
+                    'sharpness': raw_sharpness,
+                    'noise': raw_noise,
+                    'dynamic_range': raw_dynamic_range,
+                    'brightness': brightness,
+                    'contrast': contrast,
+                    'saturation': saturation,
+                    'exposure_score': exposure_score
+                })
+                
+                print(f"  [DEBUG RAW] sharpness={raw_sharpness:.1f}, noise={raw_noise:.1f}, dr={raw_dynamic_range:.1f}EV")
+                
+                # ============================================
+                # 4. Метаданные камеры
+                # ============================================
                 file_size = os.path.getsize(file_path)
                 
-                # Извлекаем метаданные камеры
                 camera_make = None
                 camera_model = None
                 iso = None
@@ -191,7 +185,6 @@ class ImageAnalyzer:
                     camera_model = getattr(raw.metadata, 'model', None)
                     iso = getattr(raw.metadata, 'iso_speed', None)
                     
-                    # Обработка выдержки
                     shutter = getattr(raw.metadata, 'shutter', None)
                     if shutter:
                         if shutter < 1:
@@ -202,19 +195,21 @@ class ImageAnalyzer:
                     aperture = getattr(raw.metadata, 'aperture', None)
                     focal_length = getattr(raw.metadata, 'focal_length', None)
                 
-                # Формируем результат со ВСЕМИ метриками
+                # ============================================
+                # 5. Формирование результата
+                # ============================================
                 result = {
                     'file_path': file_path,
                     'filename': os.path.basename(file_path),
                     'file_size': file_size,
                     'image_width': width,
                     'image_height': height,
-                    'sharpness_score': float(round(sharpness, 2)),
-                    'noise_level': float(round(noise, 2)),
+                    'sharpness_score': float(round(raw_sharpness, 2)),
+                    'noise_level': float(round(raw_noise, 2)),
                     'brightness': float(round(brightness, 2)),
                     'contrast': float(round(contrast, 2)),
                     'saturation': float(round(saturation, 2)),
-                    'dynamic_range': float(round(dynamic_range, 2)),
+                    'dynamic_range': float(round(raw_dynamic_range, 2)),
                     'avg_red': float(round(avg_r, 2)),
                     'avg_green': float(round(avg_g, 2)),
                     'avg_blue': float(round(avg_b, 2)),
@@ -229,9 +224,8 @@ class ImageAnalyzer:
                     'focal_length': round(focal_length, 1) if focal_length else None
                 }
                 
-                # print(f"  [DEBUG RAW] Результат: {result.keys()}")
                 return result
-                    
+                        
         except Exception as e:
             print(f"  ⚠️ RAW обработка не удалась: {e}")
             import traceback
@@ -261,29 +255,45 @@ class ImageAnalyzer:
             sharpness = (np.var(grad_x) + np.var(grad_y)) / 2
             
             # Нормализуем в диапазон 0-100
-            normalized = min(100, sharpness / 100)
+            normalized = min(100, sharpness / 10)
             
             return max(0, normalized)
         except Exception:
             return 0.0
     
     def _calculate_noise(self, pixels: np.ndarray) -> float:
-        """Вычисляет уровень шума"""
-        try:
-            if len(pixels.shape) == 3:
-                gray = np.mean(pixels, axis=2)
+        """Вычисляет уровень шума с учётом яркости"""
+        if len(pixels.shape) == 3:
+            gray = np.mean(pixels, axis=2)
+        else:
+            gray = pixels
+        
+        mean_val = np.mean(gray)
+        std_val = np.std(gray)
+        
+        if mean_val > 0:
+            # Коэффициент вариации (относительный шум)
+            cv = std_val / mean_val  # Coefficient of Variation
+            
+            # При низкой яркости корректируем оценку
+            brightness_factor = min(1.0, mean_val / 128.0)  # mean_val 0-255
+            if brightness_factor < 0.3:  # Фото тёмное
+                # Шум кажется выше из-за темноты, корректируем
+                adjusted_cv = cv * (1 + (0.3 - brightness_factor))
             else:
-                gray = pixels
+                adjusted_cv = cv
             
-            if gray.size == 0:
-                return 0.0
+            # Преобразуем в оценку 0-100 (чем меньше шум, тем выше оценка)
+            # Для хорошего фото cv ~ 0.05-0.15
+            noise_score = max(0, min(100, 100 - (adjusted_cv * 200)))
             
-            # Упрощенная оценка шума через стандартное отклонение
-            noise_level = np.std(gray) / 255.0 * 100
+            # Доп. корректировка: даже в темноте шум не может быть 100%
+            if mean_val < 30:  # Очень тёмное фото
+                noise_score = min(noise_score, 70)
             
-            return min(100, max(0, noise_level))
-        except Exception:
-            return 0.0
+            return noise_score
+        
+        return 50.0  # Значение по умолчанию
     
     def _calculate_brightness(self, pixels: np.ndarray) -> float:
         """Вычисляет среднюю яркость (0-1)"""
@@ -331,75 +341,126 @@ class ImageAnalyzer:
             return 0.5
     
     def _calculate_dynamic_range(self, pixels: np.ndarray) -> float:
-        """Вычисляет динамический диапазон (в EV)"""
+        """Вычисляет динамический диапазон с компенсацией экспозиции"""
         try:
             if len(pixels.shape) == 3:
                 gray = np.mean(pixels, axis=2)
             else:
                 gray = pixels
             
-            if gray.size == 0:
-                return 0.0
+            gray_norm = gray / 255.0
             
-            p99 = np.percentile(gray, 99)
-            p1 = np.percentile(gray, 1)
+            # Оценка яркости фото
+            mean_brightness = np.mean(gray_norm)
             
-            if p1 > 0:
-                dr = np.log2(p99 / p1)
-            else:
-                dr = 0
+            # Расширяем гистограмму для корректного расчёта
+            p99 = np.percentile(gray_norm, 99)
+            p5 = np.percentile(gray_norm, 5)
             
-            return min(12, max(0, dr))
+            # Корректируем очень тёмные изображения
+            if p99 < 0.3 or mean_brightness < 0.2:  # Фото слишком тёмное
+                # Компенсируем экспозицию для оценки ДР
+                target_brightness = 0.5
+                exposure_correction = target_brightness / (mean_brightness + 0.01)
+                exposure_correction = min(exposure_correction, 4.0)  # Не более 4 стопов
+                
+                gray_corrected = np.clip(gray_norm * exposure_correction, 0, 1)
+                p99 = np.percentile(gray_corrected, 99)
+                p5 = np.percentile(gray_corrected, 5)
+            
+            # Защита от вырожденных случаев
+            if p5 < 0.001:
+                p5 = 0.001
+            
+            dr = np.log2(p99 / p5)
+            
+            # Ограничиваем реалистичными значениями
+            if mean_brightness < 0.15:
+                # Для очень тёмных фото даём базовую оценку ДР камеры
+                return min(12, max(8, dr))
+            
+            return min(14, max(4, dr))
+            
         except Exception:
-            return 0.0
+            return 8.0
     
     def _calculate_raw_dynamic_range(self, raw_array: np.ndarray, black_level: int, white_level: int) -> float:
-        """Вычисляет динамический диапазон для RAW"""
+        """Вычисляет динамический диапазон из сырых байер-данных"""
         try:
-            dark_pixels = raw_array[raw_array <= np.percentile(raw_array, 10)]
+            # Применяем чёрный уровень
+            raw_centered = raw_array - black_level
+            raw_centered = np.maximum(raw_centered, 0)
+            
+            # Анализируем теневую область (нижние 10% от максимального)
+            max_val = np.percentile(raw_centered, 99)
+            threshold = max_val * 0.1
+            dark_pixels = raw_centered[raw_centered <= threshold]
+            
+            if len(dark_pixels) < 100:
+                dark_pixels = raw_centered[raw_centered <= np.percentile(raw_centered, 5)]
+            
             noise_std = np.std(dark_pixels) if len(dark_pixels) > 0 else 1.0
             
-            max_signal = np.percentile(raw_array, 99) - black_level
+            # Максимальный сигнал (99-й перцентиль)
+            max_signal = np.percentile(raw_centered, 99)
             
             if noise_std > 0 and max_signal > 0:
                 dr = np.log2(max_signal / noise_std)
-                return min(16, max(0, dr))
+                return min(16, max(4, dr))
             
-            return 0.0
+            return 8.0
         except Exception:
-            return 0.0
+            return 8.0
     
     def _calculate_raw_noise(self, raw_array: np.ndarray, white_level: int) -> float:
-        """Вычисляет уровень шума для RAW"""
+        """Вычисляет уровень шума из сырых байер-данных"""
         try:
-            shadow_pixels = raw_array[raw_array <= np.percentile(raw_array, 10)]
+            # Анализируем теневую область
+            shadow_threshold = np.percentile(raw_array, 10)
+            shadow_pixels = raw_array[raw_array <= shadow_threshold]
+            
             if len(shadow_pixels) > 0:
                 noise_std = np.std(shadow_pixels)
+                # Нормализуем в процентах относительно белого уровня
                 normalized = (noise_std / white_level) * 100
-                return min(100, max(0, normalized))
+                # Шум в RAW обычно 0.5-5%, нормализуем в шкалу 0-100
+                # где 0% шума = 0, 5% шума = 50, 10%+ шума = 100
+                noise_score = min(100, normalized * 10)
+                return max(0, noise_score)
             return 0.0
         except Exception:
             return 0.0
     
     def _calculate_raw_sharpness(self, raw_array: np.ndarray) -> float:
-        """Вычисляет резкость для RAW"""
+        """Вычисляет резкость из сырых байер-данных"""
         try:
             h, w = raw_array.shape
             if h < 200 or w < 200:
-                return 0.0
+                return 50.0  # Значение по умолчанию
             
+            # Берем центральную область и нормализуем
             cy, cx = h // 2, w // 2
             crop = raw_array[cy-100:cy+100, cx-100:cx+100]
             
-            grad_x = np.diff(crop, axis=1)
-            grad_y = np.diff(crop, axis=0)
+            # Нормализуем яркость для корректного расчёта градиентов
+            crop_norm = (crop - np.min(crop)) / (np.max(crop) - np.min(crop) + 1e-6)
             
+            # Градиенты
+            grad_x = np.diff(crop_norm, axis=1)
+            grad_y = np.diff(crop_norm, axis=0)
+            
+            if grad_x.size == 0 or grad_y.size == 0:
+                return 50.0
+            
+            # Дисперсия градиентов
             sharpness = (np.var(grad_x) + np.var(grad_y)) / 2
-            normalized = min(100, sharpness / 10000)
+            
+            # Нормализация: типичные значения 0.001-0.01 для нормальных фото
+            normalized = min(100, sharpness * 5000)
             
             return max(0, normalized)
         except Exception:
-            return 0.0
+            return 50.0
     
     def _get_color_averages(self, pixels: np.ndarray) -> Tuple[float, float, float]:
         """Получает средние значения цветовых каналов"""
@@ -471,32 +532,133 @@ class ImageAnalyzer:
             return 0.5
     
     def _calculate_overall_score(self, metrics: Dict[str, float]) -> float:
-        """Вычисляет общую оценку на основе всех метрик"""
+        """Исправленная общая оценка с учётом недоэкспозиции"""
         try:
             weights = {
-                'sharpness': 0.25,
-                'noise': 0.15,
+                'sharpness': 0.30,
+                'noise': 0.20,
+                'dynamic_range': 0.25,
                 'brightness': 0.10,
-                'contrast': 0.10,
                 'saturation': 0.10,
-                'dynamic_range': 0.20,
-                'exposure_score': 0.10
+                'exposure_score': 0.05
             }
             
             total = 0
             for metric, weight in weights.items():
                 if metric in metrics:
                     if metric == 'noise':
-                        # Шум: чем меньше, тем лучше
-                        value = max(0, 100 - metrics[metric]) / 100
+                        # Шум: инвертируем
+                        value = max(0, min(100, 100 - metrics[metric]))
+                    elif metric == 'brightness':
+                        brightness = metrics[metric] * 100
+                        # Мягкая оценка яркости (не штрафуем сильно за недоэкспозицию)
+                        if brightness < 20:
+                            # Очень тёмное фото, но не штрафуем сильно
+                            value = 50
+                        elif brightness < 30:
+                            value = 60
+                        elif brightness < 40:
+                            value = 70
+                        elif 40 <= brightness <= 60:
+                            value = 100
+                        elif brightness <= 80:
+                            value = 80
+                        else:
+                            value = 60
+                    elif metric == 'exposure_score':
+                        exp_val = metrics[metric] * 100
+                        # Тёмное фото может иметь низкий exposure_score, не штрафуем сильно
+                        if exp_val < 30:
+                            value = 50
+                        else:
+                            value = exp_val
+                    elif metric == 'dynamic_range':
+                        # ДР уже скорректирован в _calculate_dynamic_range
+                        value = metrics[metric] * 7  # Поднимаем вес ДР в оценке
+                        value = min(100, value)
+                    elif metric == 'saturation':
+                        # Для RAW насыщенность всегда низкая, не штрафуем сильно
+                        value = max(50, metrics[metric])
                     else:
-                        value = min(1.0, max(0.0, metrics[metric]))
+                        value = metrics[metric]
+                    
+                    # Нормализуем в 0-100
+                    value = max(0, min(100, value))
                     total += value * weight
             
-            return total * 100
+            # Бонус за хорошую камеру (если есть DxOMark)
+            # Этот бонус нужно добавить при вызове, передавая dxomark_score
+            # Пока просто корректируем
+            
+            # Для очень тёмных фото поднимаем минимальную оценку
+            if metrics.get('brightness', 0.5) < 0.2:
+                total = max(total, 45)  # Минимум 45% для тёмных фото хорошей камеры
+            
+            return total
+            
         except Exception:
-            return 0.0
+            return 50.0
     
+    def _calculate_overall_score_raw(self, metrics: Dict[str, float]) -> float:
+        """Специальная общая оценка для RAW изображений"""
+        try:
+            weights = {
+                'sharpness': 0.25,
+                'noise': 0.20,
+                'dynamic_range': 0.30,  # ДР важнее для RAW
+                'brightness': 0.10,
+                'saturation': 0.10,
+                'exposure_score': 0.05
+            }
+            
+            total = 0
+            for metric, weight in weights.items():
+                if metric in metrics:
+                    if metric == 'noise':
+                        # Шум: инвертируем (меньше шума = выше оценка)
+                        value = max(0, min(100, 100 - metrics[metric]))
+                    elif metric == 'brightness':
+                        brightness = metrics[metric] * 100
+                        if brightness < 20:
+                            value = 50
+                        elif brightness < 30:
+                            value = 60
+                        elif brightness < 40:
+                            value = 70
+                        elif 40 <= brightness <= 60:
+                            value = 100
+                        elif brightness <= 80:
+                            value = 80
+                        else:
+                            value = 60
+                    elif metric == 'exposure_score':
+                        exp_val = metrics[metric] * 100
+                        if exp_val < 30:
+                            value = 50
+                        else:
+                            value = exp_val
+                    elif metric == 'dynamic_range':
+                        # ДР уже скорректирован в сыром виде
+                        value = metrics[metric] * 7
+                        value = min(100, value)
+                    elif metric == 'saturation':
+                        # Для RAW насыщенность всегда низкая, не штрафуем сильно
+                        value = max(50, metrics[metric])
+                    else:
+                        value = metrics[metric]
+                    
+                    value = max(0, min(100, value))
+                    total += value * weight
+            
+            # Для очень тёмных фото поднимаем минимальную оценку
+            if metrics.get('brightness', 0.5) < 0.2:
+                total = max(total, 45)
+            
+            return total
+            
+        except Exception:
+            return 50.0
+
     def _extract_exif(self, img: Image.Image) -> Dict[str, Any]:
         """Извлекает EXIF данные из изображения"""
         exif_data = {
