@@ -31,7 +31,7 @@ class PhotoQualityAnalyzerApp:
     """Главное окно приложения"""
     def __init__(self):
         self.root = ctk.CTk()
-        self.root.title("Photo Quality Analyzer - Анализ качества фотографий")
+        self.root.title("Camera Quality Analyzer - Анализ качества фотографий")
         self.root.geometry("1400x850")
         self.root.minsize(1200, 750)
         
@@ -111,7 +111,7 @@ class PhotoQualityAnalyzerApp:
         # Заголовок
         self.title_label = ctk.CTkLabel(
             self.top_frame, 
-            text="PHOTO QUALITY ANALYZER", 
+            text="CAMERA QUALITY ANALYZER", 
             font=ctk.CTkFont(size=24, weight="bold")
         )
         self.title_label.pack(side="left", padx=10)
@@ -671,7 +671,7 @@ class PhotoQualityAnalyzerApp:
         camera_make = result.get('camera_make', 'Не определено')
         camera_model = result.get('camera_model', 'Не определена')
         
-        info += f"Производитель: {camera_make}\n"
+        # info += f"Производитель: {camera_make}\n"
         info += f"Модель камеры: {camera_model}\n\n"
         
         # DxOMark оценка
@@ -792,23 +792,128 @@ class PhotoQualityAnalyzerApp:
         self.gauge_canvas.create_text(cx, cy, text=f"{value:.0f}%", fill="white", font=("Arial", 20, "bold"))
     
     def search_camera_model(self):
-        """Поиск модели камеры вручную"""
+        """Поиск модели камеры вручную (с подсказками)"""
         query = self.search_entry.get().strip()
         if not query:
             messagebox.showwarning("Внимание", "Введите название модели для поиска")
             return
         
+        # Сначала пробуем прямой поиск
         models = self.dxo_service.search_models(query)
         
-        if models:
+        if not models:
+            # Если ничего не нашли, показываем диалог с подсказками
+            dialog = ctk.CTkToplevel(self.root)
+            dialog.title("Поиск модели")
+            dialog.geometry("600x500")
+            dialog.grab_set()
+            
+            ctk.CTkLabel(dialog, text=f"Модель '{query}' не найдена.", font=ctk.CTkFont(size=14)).pack(pady=10)
+            ctk.CTkLabel(dialog, text="Попробуйте один из вариантов ниже:", font=ctk.CTkFont(size=12)).pack()
+            
+            # Показываем список всех моделей для выбора
+            all_models = self.dxo_service.get_all_models()
+            
+            # Фильтруем модели, содержащие ключевые слова из запроса
+            query_lower = query.lower()
+            keywords = query_lower.split()
+            
+            filtered_models = []
+            for model in all_models:
+                model_lower = model.lower()
+                score = 0
+                for kw in keywords:
+                    if kw in model_lower:
+                        score += 1
+                    # Дополнительные соответствия
+                    if kw == "s23" and "galaxy s23" in model_lower:
+                        score += 2
+                    if kw == "s24" and "galaxy s24" in model_lower:
+                        score += 2
+                    if kw == "iphone" and "iphone" in model_lower:
+                        score += 1
+                    if kw == "pixel" and "pixel" in model_lower:
+                        score += 1
+                if score > 0:
+                    filtered_models.append((score, model))
+            
+            # Сортируем по релевантности
+            filtered_models.sort(key=lambda x: x[0], reverse=True)
+            suggested_models = [m[1] for m in filtered_models[:15]]
+            
+            if not suggested_models:
+                suggested_models = all_models[:50]
+            
+            # Создаём список для выбора
+            listbox_frame = ctk.CTkFrame(dialog)
+            listbox_frame.pack(fill="both", expand=True, padx=10, pady=10)
+            
+            scrollbar = ctk.CTkScrollbar(listbox_frame)
+            scrollbar.pack(side="right", fill="y")
+            
+            listbox = tk.Listbox(listbox_frame, font=("Consolas", 11), yscrollcommand=scrollbar.set)
+            listbox.pack(side="left", fill="both", expand=True)
+            scrollbar.configure(command=listbox.yview)
+            
+            for model in suggested_models:
+                listbox.insert("end", model)
+            
+            def select_model():
+                selection = listbox.curselection()
+                if selection:
+                    model = suggested_models[selection[0]]
+                    dxo_score = self.dxo_service.get_score(model)
+                    
+                    if self.analysis_result:
+                        self.analysis_result['camera_model'] = model
+                        self.analysis_result['dxomark_score'] = dxo_score
+                        self.update_camera_info(self.analysis_result)
+                        
+                        if self.db and self.analysis_result.get('id'):
+                            self.db.save_analysis(self.analysis_result)
+                    
+                    messagebox.showinfo("Успех", f"Модель {model} (DxOMark: {dxo_score}) установлена")
+                    dialog.destroy()
+            
+            def search_again():
+                new_query = search_entry.get().strip()
+                if new_query:
+                    dialog.destroy()
+                    self.search_camera_model()
+            
+            # Поле для нового поиска
+            search_frame = ctk.CTkFrame(dialog)
+            search_frame.pack(fill="x", padx=10, pady=5)
+            
+            ctk.CTkLabel(search_frame, text="Новый поиск:").pack(side="left", padx=5)
+            search_entry = ctk.CTkEntry(search_frame, width=250)
+            search_entry.pack(side="left", padx=5)
+            ctk.CTkButton(search_frame, text="🔍 Найти", command=search_again, width=80).pack(side="left", padx=5)
+            
+            btn_frame = ctk.CTkFrame(dialog)
+            btn_frame.pack(pady=10)
+            
+            ctk.CTkButton(btn_frame, text="Выбрать", command=select_model, width=120).pack(side="left", padx=5)
+            ctk.CTkButton(btn_frame, text="Отмена", command=dialog.destroy, width=120).pack(side="left", padx=5)
+            
+        else:
+            # Нашли модели - показываем диалог выбора
             dialog = ctk.CTkToplevel(self.root)
             dialog.title("Выбор модели камеры")
             dialog.geometry("500x400")
+            dialog.grab_set()
             
             ctk.CTkLabel(dialog, text="Найденные модели:", font=ctk.CTkFont(size=14)).pack(pady=10)
             
-            listbox = tk.Listbox(dialog, font=("Consolas", 11))
-            listbox.pack(fill="both", expand=True, padx=10, pady=5)
+            listbox_frame = ctk.CTkFrame(dialog)
+            listbox_frame.pack(fill="both", expand=True, padx=10, pady=10)
+            
+            scrollbar = ctk.CTkScrollbar(listbox_frame)
+            scrollbar.pack(side="right", fill="y")
+            
+            listbox = tk.Listbox(listbox_frame, font=("Consolas", 11), yscrollcommand=scrollbar.set)
+            listbox.pack(side="left", fill="both", expand=True)
+            scrollbar.configure(command=listbox.yview)
             
             for model in models:
                 listbox.insert("end", model)
@@ -831,8 +936,6 @@ class PhotoQualityAnalyzerApp:
                     dialog.destroy()
             
             ctk.CTkButton(dialog, text="Выбрать", command=select_model, width=150).pack(pady=10)
-        else:
-            messagebox.showinfo("Результат", "Модели не найдены. Попробуйте другой запрос.")
     
     def load_recent_analyses(self):
         """Загрузка последних анализов из БД (все метрики - с дробными значениями)"""

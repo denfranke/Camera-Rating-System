@@ -166,7 +166,7 @@ class ImageAnalyzer:
                     'exposure_score': exposure_score
                 })
                 
-                print(f"  [DEBUG RAW] sharpness={raw_sharpness:.1f}, noise={raw_noise:.1f}, dr={raw_dynamic_range:.1f}EV")
+                # print(f"  [DEBUG RAW] sharpness={raw_sharpness:.1f}, noise={raw_noise:.1f}, dr={raw_dynamic_range:.1f}EV")
                 
                 # ============================================
                 # 4. Метаданные камеры
