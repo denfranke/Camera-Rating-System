@@ -1,0 +1,16 @@
+{
+    "database": {
+        "type": "mssql",
+        "sqlite": {
+            "db_path": "photo_analysis.db"
+        },
+        "mssql": {
+            "server": "192.168.199.148",
+            "port": 42145,
+            "database": "PhotoQualityAnalyzer",
+            "username": "sa",
+            "password": "123",
+            "use_windows_auth": false
+        }
+    }
+}

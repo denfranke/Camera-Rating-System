@@ -86,15 +86,15 @@ class PhotoQualityAnalyzerApp:
                 self.db = Database(db_type="sqlite", db_path="photo_analysis.db")
                 self.current_db_type = "sqlite"
                 
-            print(f"✅ База данных подключена: {self.current_db_type}")
+            print(f"База данных подключена: {self.current_db_type}")
         except Exception as e:
-            print(f"❌ Ошибка подключения к БД: {e}")
-            print("🔄 Переключаемся на SQLite...")
+            print(f"Ошибка подключения к БД: {e}")
+            print("Переключаемся на SQLite...")
             try:
                 self.db = Database(db_type="sqlite", db_path="photo_analysis.db")
                 self.current_db_type = "sqlite"
             except Exception as e2:
-                print(f"❌ Критическая ошибка: {e2}")
+                print(f"Критическая ошибка: {e2}")
                 self.db = None
     
     def create_widgets(self):
@@ -111,13 +111,13 @@ class PhotoQualityAnalyzerApp:
         # Заголовок
         self.title_label = ctk.CTkLabel(
             self.top_frame, 
-            text="📷 PHOTO QUALITY ANALYZER", 
+            text="PHOTO QUALITY ANALYZER", 
             font=ctk.CTkFont(size=24, weight="bold")
         )
         self.title_label.pack(side="left", padx=10)
         
         # Статус БД
-        db_status = f"🗄️ БД: {self.current_db_type.upper()}"
+        db_status = f"БД: {self.current_db_type.upper()}"
         self.db_status_label = ctk.CTkLabel(
             self.top_frame,
             text=db_status,
@@ -128,7 +128,7 @@ class PhotoQualityAnalyzerApp:
         # Кнопка настроек БД
         self.db_btn = ctk.CTkButton(
             self.top_frame, 
-            text="⚙️ Настройки БД", 
+            text="Настройки БД", 
             width=120,
             command=self.open_db_settings
         )
@@ -160,7 +160,7 @@ class PhotoQualityAnalyzerApp:
         
         self.status_label = ctk.CTkLabel(
             self.bottom_frame, 
-            text="✅ Готов к работе. Загрузите фотографию для анализа.",
+            text="Готов к работе. Загрузите фотографию для анализа.",
             font=ctk.CTkFont(size=12)
         )
         self.status_label.pack(side="left", padx=10)
@@ -175,7 +175,7 @@ class PhotoQualityAnalyzerApp:
         # Заголовок
         ctk.CTkLabel(
             self.left_panel, 
-            text="📸 ЗАГРУЗКА ФОТОГРАФИИ",
+            text="ЗАГРУЗКА ФОТОГРАФИИ",
             font=ctk.CTkFont(size=16, weight="bold")
         ).pack(pady=(10, 5))
         
@@ -185,7 +185,7 @@ class PhotoQualityAnalyzerApp:
         
         self.load_btn = ctk.CTkButton(
             self.btn_frame,
-            text="📁 Загрузить файл",
+            text="Загрузить файл",
             command=self.load_image,
             width=180,
             height=40,
@@ -195,7 +195,7 @@ class PhotoQualityAnalyzerApp:
         
         self.analyze_btn = ctk.CTkButton(
             self.btn_frame,
-            text="🔍 АНАЛИЗИРОВАТЬ",
+            text="АНАЛИЗИРОВАТЬ",
             command=self.start_analysis,
             width=180,
             height=40,
@@ -212,7 +212,7 @@ class PhotoQualityAnalyzerApp:
         
         self.preview_label = ctk.CTkLabel(
             self.preview_frame, 
-            text="🖼️\n\nИзображение не загружено",
+            text="Изображение не загружено",
             font=ctk.CTkFont(size=14),
             corner_radius=10
         )
@@ -226,16 +226,16 @@ class PhotoQualityAnalyzerApp:
         self.tabview.pack(fill="both", expand=True, padx=10, pady=10)
         
         # Вкладка результатов
-        self.tab_results = self.tabview.add("📊 Результаты анализа")
+        self.tab_results = self.tabview.add("Результаты анализа")
         
         # Вкладка метрик
-        self.tab_metrics = self.tabview.add("📈 Детальные метрики")
+        self.tab_metrics = self.tabview.add("Детальные метрики")
         
         # Вкладка камеры
-        self.tab_camera = self.tabview.add("📷 Информация о камере")
+        self.tab_camera = self.tabview.add("Информация о камере")
         
         # Вкладка истории (расширенная)
-        self.tab_history = self.tabview.add("📜 История анализов")
+        self.tab_history = self.tabview.add("История анализов")
         
         # ========== ВКЛАДКА РЕЗУЛЬТАТОВ ==========
         self.create_results_tab()
@@ -296,7 +296,7 @@ class PhotoQualityAnalyzerApp:
         
         ctk.CTkLabel(
             self.recommendations_frame,
-            text="💡 РЕКОМЕНДАЦИИ",
+            text="РЕКОМЕНДАЦИИ",
             font=ctk.CTkFont(size=14, weight="bold")
         ).pack(pady=(10, 5))
         
@@ -308,13 +308,13 @@ class PhotoQualityAnalyzerApp:
         
         # Сетка метрик (убрана композиция)
         metrics = [
-            ("🎯 Резкость", "sharpness", 0, 100, False),
-            ("🌫️ Уровень шума", "noise", 0, 100, True),  # инвертируем
-            ("🌅 Динамический диапазон", "dynamic_range", 0, 16, False),
-            ("💡 Яркость", "brightness", 0, 100, False),
-            ("🎨 Контраст", "contrast", 0, 100, False),
-            ("🌈 Насыщенность", "saturation", 0, 100, False),
-            ("📸 Экспозиция", "exposure", 0, 100, False),
+            ("Резкость", "sharpness", 0, 100, False),
+            ("Уровень шума", "noise", 0, 100, True),  # инвертируем
+            ("Динамический диапазон", "dynamic_range", 0, 16, False),
+            ("Яркость", "brightness", 0, 100, False),
+            ("Контраст", "contrast", 0, 100, False),
+            ("Насыщенность", "saturation", 0, 100, False),
+            ("Экспозиция", "exposure", 0, 100, False),
         ]
         
         self.metric_bars = {}
@@ -361,7 +361,7 @@ class PhotoQualityAnalyzerApp:
         
         self.search_btn = ctk.CTkButton(
             self.manual_search_frame,
-            text="🔍 Найти",
+            text="Найти",
             command=self.search_camera_model,
             width=100
         )
@@ -427,14 +427,14 @@ class PhotoQualityAnalyzerApp:
         
         ctk.CTkButton(
             btn_frame,
-            text="🔄 Обновить",
+            text="Обновить",
             command=self.load_recent_analyses,
             width=150
         ).pack(side="left", padx=5)
         
         ctk.CTkButton(
             btn_frame,
-            text="🗑️ Удалить выбранное",
+            text="Удалить",
             command=self.delete_selected_photo,
             width=150,
             fg_color="#e74c3c",
@@ -455,7 +455,7 @@ class PhotoQualityAnalyzerApp:
             self.current_image_path = file_path
             self.display_preview(file_path)
             self.analyze_btn.configure(state="normal")
-            self.status_label.configure(text=f"📁 Загружено: {os.path.basename(file_path)}")
+            self.status_label.configure(text=f"Загружено: {os.path.basename(file_path)}")
     
     def display_preview(self, file_path):
         """Отображение предпросмотра изображения (с поддержкой RAW)"""
@@ -498,7 +498,7 @@ class PhotoQualityAnalyzerApp:
                 except ImportError:
                     # Если rawpy не установлен, показываем сообщение
                     self.preview_label.configure(
-                        text=f"📷 RAW файл: {os.path.basename(file_path)}\n\n"
+                        text=f"RAW файл: {os.path.basename(file_path)}\n\n"
                             f"Для предпросмотра RAW установите:\n"
                             f"pip install rawpy\n\n"
                             f"Анализ всё равно будет выполнен."
@@ -508,7 +508,7 @@ class PhotoQualityAnalyzerApp:
                     print(f"RAW preview error: {e}")
                     # Показываем информационное сообщение вместо ошибки
                     self.preview_label.configure(
-                        text=f"📷 RAW файл: {os.path.basename(file_path)}\n\n"
+                        text=f"RAW файл: {os.path.basename(file_path)}\n\n"
                             f"Предпросмотр недоступен,\n"
                             f"но анализ будет выполнен."
                     )
@@ -535,7 +535,7 @@ class PhotoQualityAnalyzerApp:
         except Exception as e:
             print(f"Preview error: {e}")
             self.preview_label.configure(
-                text=f"❌ Не удалось загрузить изображение\n\n"
+                text=f"Не удалось загрузить изображение\n\n"
                     f"{os.path.basename(file_path)}\n"
                     f"Анализ будет выполнен."
             )
@@ -548,9 +548,9 @@ class PhotoQualityAnalyzerApp:
             return
         
         self.is_analyzing = True
-        self.analyze_btn.configure(state="disabled", text="⏳ Анализируем...")
+        self.analyze_btn.configure(state="disabled", text="Анализируем...")
         self.progress_bar.start()
-        self.status_label.configure(text="🔍 Анализ изображения...")
+        self.status_label.configure(text="Анализ изображения...")
         
         # Запускаем в отдельном потоке
         thread = threading.Thread(target=self.perform_analysis)
@@ -599,19 +599,19 @@ class PhotoQualityAnalyzerApp:
         
         # Рейтинг
         if overall >= 85:
-            rating = "🏆 ПРЕВОСХОДНО"
+            rating = "ПРЕВОСХОДНО"
             color = "#2ecc71"
         elif overall >= 70:
-            rating = "✅ ОТЛИЧНО"
+            rating = "ОТЛИЧНО"
             color = "#3498db"
         elif overall >= 55:
-            rating = "👍 ХОРОШО"
+            rating = "ХОРОШО"
             color = "#f39c12"
         elif overall >= 40:
-            rating = "⚠️ УДОВЛЕТВОРИТЕЛЬНО"
+            rating = "УДОВЛЕТВОРИТЕЛЬНО"
             color = "#e67e22"
         else:
-            rating = "❌ ТРЕБУЕТ УЛУЧШЕНИЯ"
+            rating = "ТРЕБУЕТ УЛУЧШЕНИЯ"
             color = "#e74c3c"
         
         self.score_rating.configure(text=rating, text_color=color)
@@ -639,10 +639,10 @@ class PhotoQualityAnalyzerApp:
         
         # ========== ЗАВЕРШЕНИЕ ==========
         self.is_analyzing = False
-        self.analyze_btn.configure(state="normal", text="🔍 АНАЛИЗИРОВАТЬ")
+        self.analyze_btn.configure(state="normal", text="АНАЛИЗИРОВАТЬ")
         self.progress_bar.stop()
         self.progress_bar.set(1)
-        self.status_label.configure(text="✅ Анализ завершён!")
+        self.status_label.configure(text="Анализ завершён!")
         
         self.root.after(2000, lambda: self.progress_bar.set(0))
     
@@ -671,27 +671,27 @@ class PhotoQualityAnalyzerApp:
         camera_make = result.get('camera_make', 'Не определено')
         camera_model = result.get('camera_model', 'Не определена')
         
-        info += f"📱 Производитель: {camera_make}\n"
-        info += f"📷 Модель камеры: {camera_model}\n\n"
+        info += f"Производитель: {camera_make}\n"
+        info += f"Модель камеры: {camera_model}\n\n"
         
         # DxOMark оценка
         dxo_score = result.get('dxomark_score')
         if dxo_score:
-            info += f"🏆 DxOMark оценка: {dxo_score}\n"
+            info += f"DxOMark оценка: {dxo_score}\n"
             if dxo_score >= 160:
-                info += "   🌟 Элитная камера (топ-уровень)\n"
+                info += "   Элитная камера (топ-уровень)\n"
             elif dxo_score >= 150:
-                info += "   ⭐ Отличная камера\n"
+                info += "   Отличная камера\n"
             elif dxo_score >= 140:
-                info += "   👍 Очень хорошая камера\n"
+                info += "   Очень хорошая камера\n"
             elif dxo_score >= 120:
-                info += "   ✅ Хорошая камера\n"
+                info += "   Хорошая камера\n"
             elif dxo_score >= 100:
-                info += "   👌 Средняя камера\n"
+                info += "   Средняя камера\n"
             else:
-                info += "   📱 Бюджетная камера\n"
+                info += "   Бюджетная камера\n"
         else:
-            info += "❓ DxOMark оценка не найдена для этой модели\n"
+            info += "DxOMark оценка не найдена для этой модели\n"
         
         # Технические параметры
         iso = result.get('iso')
@@ -700,7 +700,7 @@ class PhotoQualityAnalyzerApp:
         focal_length = result.get('focal_length')
         
         if iso or exposure_time or aperture or focal_length:
-            info += "\n📸 Технические параметры:\n"
+            info += "\nТехнические параметры:\n"
             if iso:
                 info += f"   • ISO: {iso}\n"
             if exposure_time:
@@ -719,36 +719,36 @@ class PhotoQualityAnalyzerApp:
         
         sharpness = result.get('sharpness_score', 0)
         if sharpness < 50:
-            recommendations.append("🔍 Низкая резкость - используйте штатив или улучшите фокусировку")
+            recommendations.append("Низкая резкость - используйте штатив или улучшите фокусировку")
         
         noise = result.get('noise_level', 0)
         if noise > 40:
-            recommendations.append("🌫️ Высокий уровень шума - снизьте ISO или используйте шумоподавление")
+            recommendations.append("Высокий уровень шума - снизьте ISO или используйте шумоподавление")
         
         dynamic_range = result.get('dynamic_range', 0)
         if dynamic_range < 5:
-            recommendations.append("🌅 Низкий динамический диапазон - избегайте сцен с большим контрастом")
+            recommendations.append("Низкий динамический диапазон - избегайте сцен с большим контрастом")
         
         brightness = result.get('brightness', 0.5)
         if brightness < 0.3:
-            recommendations.append("🌑 Фото слишком тёмное - увеличьте экспозицию")
+            recommendations.append("Фото слишком тёмное - увеличьте экспозицию")
         elif brightness > 0.8:
-            recommendations.append("☀️ Фото пересвечено - уменьшите экспозицию")
+            recommendations.append("Фото пересвечено - уменьшите экспозицию")
         
         saturation = result.get('saturation', 0.5)
         if saturation < 0.3:
-            recommendations.append("🎨 Низкая насыщенность - фото выглядит блеклым")
+            recommendations.append("Низкая насыщенность - фото выглядит блеклым")
         elif saturation > 0.8:
-            recommendations.append("🎨 Высокая насыщенность - цвета могут быть неестественными")
+            recommendations.append("Высокая насыщенность - цвета могут быть неестественными")
         
         exposure = result.get('exposure_score', 0.5)
         if exposure < 0.4:
-            recommendations.append("📸 Недоэкспонировано - добавьте +0.7 EV")
+            recommendations.append("Недоэкспонировано - добавьте +0.7 EV")
         elif exposure > 0.8:
-            recommendations.append("📸 Переэкспонировано - уменьшите на -0.7 EV")
+            recommendations.append("Переэкспонировано - уменьшите на -0.7 EV")
         
         if not recommendations:
-            recommendations.append("👍 Отличное фото! Технические параметры в норме")
+            recommendations.append("Отличное фото! Технические параметры в норме")
         
         self.recommendations_text.delete("1.0", "end")
         for rec in recommendations:
@@ -1006,7 +1006,7 @@ class PhotoQualityAnalyzerApp:
                 with open("config.json", "w", encoding='utf-8') as f:
                     json.dump(config, f, indent=4, ensure_ascii=False)
                 
-                self.db_status_label.configure(text=f"🗄️ БД: {new_type.upper()}")
+                self.db_status_label.configure(text=f"БД: {new_type.upper()}")
                 self.load_recent_analyses()
                 messagebox.showinfo("Успех", f"База данных переключена на {new_type.upper()}")
                 dialog.destroy()
@@ -1019,7 +1019,7 @@ class PhotoQualityAnalyzerApp:
         self.analyze_btn.configure(state="normal", text="🔍 АНАЛИЗИРОВАТЬ")
         self.progress_bar.stop()
         self.progress_bar.set(0)
-        self.status_label.configure(text=f"❌ Ошибка: {error_msg[:80]}")
+        self.status_label.configure(text=f"Ошибка: {error_msg[:80]}")
         messagebox.showerror("Ошибка", f"Не удалось проанализировать изображение:\n{error_msg}")
     
     def run(self):
