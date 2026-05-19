@@ -14,6 +14,10 @@ import io
 import numpy as np
 from datetime import datetime
 
+from RefMetrics import ColorDeltaEMetric
+from RefMetrics import BaseReferenceMetric
+from RefMetrics import SimpleReferenceMetric
+
 # Добавляем путь к модулям
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
@@ -319,7 +323,7 @@ class PhotoQualityAnalyzerApp:
         
 		# метрики с эталоном 
         reference_metrics = [
-            ("Цветопередача (ΔE2000)", "DeltaE", 0, 100, False)
+            ("Цветопередача (ΔE2000)", "DeltaE", 0, 100, False, ColorDeltaEMetric),
         ]
         
         self.metric_bars = {}
@@ -352,36 +356,78 @@ class PhotoQualityAnalyzerApp:
         reference_metrics_title = ctk.CTkLabel(self.tab_metrics, text="🎯 метрики с эталоном", font=("Arial", 14, "bold"))
         reference_metrics_title.pack(anchor="w", padx=10, pady=5)
         
-        for name, key, min_val, max_val, invert in reference_metrics:
+        self.metric_instances = {}
+        
+        for name, key, min_val, max_val, invert, metric_class in reference_metrics:
+            if not metric_class:
+                continue
+                
+            # Автоматически создаем единственный ЭКЗЕМПЛЯР класса прямо здесь
+            if key not in self.metric_instances:
+                self.metric_instances[key] = metric_class(name, key)
+            
+            instance = self.metric_instances[key]
+
             frame = ctk.CTkFrame(self.tab_metrics)
             frame.pack(fill="x", padx=10, pady=5)
             
             label = ctk.CTkLabel(frame, text=name, width=160, anchor="w")
             label.pack(side="left", padx=10)
             
-            value_label = ctk.CTkLabel(frame, text="Загрузите эталон", width=120)
+            # Меняем текст в зависимости от того, загружен ли уже файл
+            status_text = "Загрузите эталон" if not instance.file_path else "Эталон готов"
+            value_label = ctk.CTkLabel(frame, text=status_text, width=120)
             value_label.pack(side="left")
             
             bar = ctk.CTkProgressBar(frame, width=240)
             bar.pack(side="left", padx=10)
             bar.set(0)
             
-            # Кнопка загрузки эталона 
+            def make_updater(lbl, progress_bar, mn_v=min_val, mx_v=max_val):
+                def update_ui(updated_instance):
+                    if updated_instance.file_path == "error":
+                        lbl.configure(text="❌ Ошибка файла", text_color="red")
+                        progress_bar.set(0)
+                        return
+                        
+                    # Берем универсальное значение, которое гарантированно обновлено
+                    metric_value = updated_instance.get_calculation_value()
+                    lbl.configure(text=f"{metric_value:.2f}", text_color="white")
+                    
+                    denom = (mx_v - mn_v) if (mx_v - mn_v) != 0 else 100
+                    normalized_value = (metric_value - mn_v) / denom
+                    progress_bar.set(max(0.0, min(normalized_value, 1.0)))
+                return update_ui
+
+
+            # Подписываем созданную функцию на изменения экземпляра
+            instance.subscribe(make_updater(value_label, bar))
+            
+            # ИСПРАВЛЕНИЕ 1: Если эталон уже загружен, сразу отображаем его значение в GUI
+            if instance.file_path and instance.file_path != "error":
+                instance._notify_subscribers()
+            
+            # ИСПРАВЛЕНИЕ 2: Кнопка загрузки эталона теперь передает только self
             ctk.CTkButton(
                 frame, 
                 text="📥 Эталон", 
                 width=90,
+                command=lambda inst=instance: inst.load_reference_action(self)
             ).pack(side="left", padx=5)
 
-
-			# Кнопка деталей
-            ctk.CTkButton(
-                frame, 
-                text="🔍 Детали", 
-                width=90,
-            ).pack(side="left", padx=5)
+            # Кнопка ДЕТАЛИЗАЦИИ: появляется ТОЛЬКО если метод переопределен в дочернем классе
+            if hasattr(instance, "open_details_modal") and type(instance).open_details_modal != BaseReferenceMetric.open_details_modal:
                 
+                parent_window = getattr(self, "root", getattr(self, "window", self))
+                
+                ctk.CTkButton(
+                    frame, 
+                    text="🔍 Детали", 
+                    width=90,
+                    command=lambda inst=instance, pw=parent_window: inst.open_details_modal(pw)
+                ).pack(side="left", padx=5)
 
+                
     def create_camera_tab(self):
         """Создание вкладки с информацией о камере"""
         
