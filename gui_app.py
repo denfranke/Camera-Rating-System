@@ -317,7 +317,15 @@ class PhotoQualityAnalyzerApp:
             ("Экспозиция", "exposure", 0, 100, False),
         ]
         
+		# метрики с эталоном 
+        reference_metrics = [
+            ("Цветопередача (ΔE2000)", "DeltaE", 0, 100, False)
+        ]
+        
         self.metric_bars = {}
+        
+        metrics_title = ctk.CTkLabel(self.tab_metrics, text="📊 Метрики без эталона", font=("Arial", 14, "bold"))
+        metrics_title.pack(anchor="w", padx=10, pady=5)
         
         for name, key, min_val, max_val, invert in metrics:
             frame = ctk.CTkFrame(self.tab_metrics)
@@ -326,10 +334,10 @@ class PhotoQualityAnalyzerApp:
             label = ctk.CTkLabel(frame, text=name, width=160, anchor="w")
             label.pack(side="left", padx=10)
             
-            value_label = ctk.CTkLabel(frame, text="---", width=60)
+            value_label = ctk.CTkLabel(frame, text="---", width=120)
             value_label.pack(side="left")
             
-            bar = ctk.CTkProgressBar(frame, width=350)
+            bar = ctk.CTkProgressBar(frame, width=240)
             bar.pack(side="left", padx=10)
             bar.set(0)
             
@@ -340,7 +348,40 @@ class PhotoQualityAnalyzerApp:
                 "max": max_val,
                 "invert": invert
             }
-    
+            
+        reference_metrics_title = ctk.CTkLabel(self.tab_metrics, text="🎯 метрики с эталоном", font=("Arial", 14, "bold"))
+        reference_metrics_title.pack(anchor="w", padx=10, pady=5)
+        
+        for name, key, min_val, max_val, invert in reference_metrics:
+            frame = ctk.CTkFrame(self.tab_metrics)
+            frame.pack(fill="x", padx=10, pady=5)
+            
+            label = ctk.CTkLabel(frame, text=name, width=160, anchor="w")
+            label.pack(side="left", padx=10)
+            
+            value_label = ctk.CTkLabel(frame, text="Загрузите эталон", width=120)
+            value_label.pack(side="left")
+            
+            bar = ctk.CTkProgressBar(frame, width=240)
+            bar.pack(side="left", padx=10)
+            bar.set(0)
+            
+            # Кнопка загрузки эталона 
+            ctk.CTkButton(
+                frame, 
+                text="📥 Эталон", 
+                width=90,
+            ).pack(side="left", padx=5)
+
+
+			# Кнопка деталей
+            ctk.CTkButton(
+                frame, 
+                text="🔍 Детали", 
+                width=90,
+            ).pack(side="left", padx=5)
+                
+
     def create_camera_tab(self):
         """Создание вкладки с информацией о камере"""
         
