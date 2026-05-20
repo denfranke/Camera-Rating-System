@@ -1,6 +1,6 @@
 {
     "database": {
-        "type": "mssql",
+        "type": "sqlite",
         "sqlite": {
             "db_path": "photo_analysis.db"
         },

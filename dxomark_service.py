@@ -253,8 +253,35 @@ class DxOMarkService:
             return None
 
     def get_score_by_model(self, camera_model: str) -> Optional[int]:
-        """Алиас для get_score"""
-        return self.get_score(camera_model)
+        """Точный поиск DxOMark оценки по точному названию модели"""
+        if not camera_model:
+            return None
+        
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT score FROM dxomark
+                    WHERE model = ?
+                    LIMIT 1
+                """, (camera_model,))
+                row = cursor.fetchone()
+                if row:
+                    return row[0]
+                
+                # Если точного нет, пробуем частичное
+                cursor.execute("""
+                    SELECT score FROM dxomark
+                    WHERE LOWER(model) LIKE LOWER(?)
+                    LIMIT 1
+                """, (f"%{camera_model}%",))
+                row = cursor.fetchone()
+                if row:
+                    return row[0]
+                
+                return None
+        except Exception:
+            return None
     
     def suggest_models(self, query: str) -> List[str]:
         """Предлагает модели по частичному вводу (автодополнение)"""
