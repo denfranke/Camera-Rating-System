@@ -81,6 +81,12 @@ class SQLiteDatabase(DatabaseInterface):
         with self._connect() as conn:
             cursor = conn.cursor()
             
+			# Проверяем и добавляем deltaE, если таблицы уже созданы
+            cursor.execute("PRAGMA table_info(analysis_results)")
+            if 'deltaE' not in [col[1] for col in cursor.fetchall()]:
+                cursor.execute("ALTER TABLE analysis_results ADD COLUMN deltaE REAL")
+                conn.commit()
+            
             # Проверяем существование таблицы
             cursor.execute("""
                 SELECT name FROM sqlite_master 
@@ -111,6 +117,7 @@ class SQLiteDatabase(DatabaseInterface):
                     sharpness_score REAL,
                     noise_level REAL,
                     brightness REAL,
+                    deltaE REAL,
                     contrast REAL,
                     saturation REAL,
                     dynamic_range REAL,
@@ -439,7 +446,7 @@ class SQLiteDatabase(DatabaseInterface):
                     exposure_score, composition_score,
                     image_width, image_height, file_size,
                     camera_make, exposure_time, aperture, focal_length,
-                    avg_red, avg_green, avg_blue, user_tags, user_notes
+                    avg_red, avg_green, avg_blue, user_tags, user_notes, deltaE
                 FROM analysis_results 
                 ORDER BY {sort_by} DESC 
                 LIMIT ? OFFSET ?

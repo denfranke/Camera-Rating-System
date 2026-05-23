@@ -447,6 +447,37 @@ class PhotoQualityAnalyzerApp:
                     denom = (mx_v - mn_v) if (mx_v - mn_v) != 0 else 100
                     normalized_value = (metric_value - mn_v) / denom
                     progress_bar.set(max(0.0, min(normalized_value, 1.0)))
+
+# ==========================================
+                    # СОХРАНЕНИЕ В ОТДЕЛЬНОЕ ПОЛЕ deltaE
+                    # ==========================================
+                    if hasattr(self, 'db') and self.db:
+                        try:
+                            # Формируем пакет данных строго по структуре вашей БД
+                            analysis_payload = {
+                                'file_path': 'j',
+                                'filename': 'j',        # Добавили заглушку для обязательного поля
+                                'camera_model': 'j', 
+                                # 'overall_score': ' ',  
+                                # 'sharpness_score': ' ',  
+                                # 'noise_level': '55',  
+                                # 'dynamic_range': ' ',  
+                                # 'brightness': ' ',  
+                                # 'contrast': ' ',  
+                                # 'saturation': ' ',  
+                                # 'exposure_score': ' ',  
+                                # 'dxomark_score': '-',   # Возвращаем дефолтный прочерк для DXO
+                                'deltaE': round(metric_value, 4)  # Записываем строго в родное поле
+                            }
+                            
+                            self.db.save_analysis(analysis_payload)
+                            
+                            if hasattr(self, 'load_cameras_analysis'):
+                                self.load_cameras_analysis()
+                                
+                        except Exception as db_error:
+                            print(f"Ошибка сохранения deltaE в БД: {db_error}")
+                    # ==========================================
                 return update_ui
 
 
@@ -542,7 +573,7 @@ class PhotoQualityAnalyzerApp:
         columns = (
             "id", "filename", "overall", "sharpness", "noise", 
             "dynamic_range", "brightness", "contrast", "saturation", 
-            "exposure", "camera", "dxo"
+            "exposure","deltaE", "camera", "dxo"
         )
         
         self.history_tree = ttk.Treeview(
@@ -563,6 +594,7 @@ class PhotoQualityAnalyzerApp:
         self.history_tree.heading("contrast", text="Контраст")
         self.history_tree.heading("saturation", text="Насыщ.")
         self.history_tree.heading("exposure", text="Экспоз.")
+        self.history_tree.heading("deltaE", text="Цв.перед.ΔE")
         self.history_tree.heading("camera", text="Камера")
         self.history_tree.heading("dxo", text="DxO")
         
@@ -577,6 +609,7 @@ class PhotoQualityAnalyzerApp:
         self.history_tree.column("contrast", width=60)
         self.history_tree.column("saturation", width=60)
         self.history_tree.column("exposure", width=60)
+        self.history_tree.column("deltaE", width=60)
         self.history_tree.column("camera", width=180)
         self.history_tree.column("dxo", width=50)
         
@@ -1998,6 +2031,7 @@ class PhotoQualityAnalyzerApp:
                 exposure = get_val('exposure_score', is_percent=True)
                 camera = (analysis.get('camera_model') or '-')[:25]
                 dxo = analysis.get('dxomark_score') or '-'
+                deltaE = analysis.get('deltaE') or '-'
                 
                 def fmt(val, decimals=1):
                     if isinstance(val, float):
@@ -2015,6 +2049,7 @@ class PhotoQualityAnalyzerApp:
                     fmt(contrast, 1),
                     fmt(saturation, 1),
                     fmt(exposure, 1),
+                    fmt(deltaE, 1),
                     camera,
                     dxo
                 ))
