@@ -455,18 +455,9 @@ class PhotoQualityAnalyzerApp:
                         try:
                             # Формируем пакет данных строго по структуре вашей БД
                             analysis_payload = {
-                                'file_path': 'j',
-                                'filename': 'j',        # Добавили заглушку для обязательного поля
-                                'camera_model': 'j', 
-                                # 'overall_score': ' ',  
-                                # 'sharpness_score': ' ',  
-                                # 'noise_level': '55',  
-                                # 'dynamic_range': ' ',  
-                                # 'brightness': ' ',  
-                                # 'contrast': ' ',  
-                                # 'saturation': ' ',  
-                                # 'exposure_score': ' ',  
-                                # 'dxomark_score': '-',   # Возвращаем дефолтный прочерк для DXO
+                                'file_path': "/",
+                                'filename': "/",
+                                'camera_model': self.selected_camera_model,
                                 'deltaE': round(metric_value, 4)  # Записываем строго в родное поле
                             }
                             
