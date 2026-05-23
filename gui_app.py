@@ -645,21 +645,25 @@ class PhotoQualityAnalyzerApp:
     def create_cameras_analysis_tab(self):
         """Создание вкладки с агрегированным анализом по камерам"""
         
-        # Таблица с агрегированными данными по камерам
+        # Таблица с агрегированными данными по камерам (Добавлен avg_delta_e)
         columns = (
             "camera", "count", "avg_overall", "avg_sharpness", "avg_noise",
             "avg_dynamic_range", "avg_brightness", "avg_contrast", 
-            "avg_saturation", "avg_exposure", "dxo_score"
+            "avg_saturation", "avg_exposure", "avg_delta_e", "dxo_score"
         )
         
+        # Основной контейнер для таблицы и вертикального скроллбара
+        table_frame = ttk.Frame(self.history_cameras_tab)
+        table_frame.pack(side="top", fill="both", expand=True, padx=5, pady=5)
+        
         self.cameras_tree = ttk.Treeview(
-            self.history_cameras_tab,
+            table_frame,
             columns=columns,
             show="headings",
             height=18
         )
         
-        # Заголовки
+        # Заголовки (Добавлен ΔE (Цвет))
         self.cameras_tree.heading("camera", text="Модель камеры")
         self.cameras_tree.heading("count", text="Кол-во фото")
         self.cameras_tree.heading("avg_overall", text="Ср. оценка")
@@ -670,57 +674,52 @@ class PhotoQualityAnalyzerApp:
         self.cameras_tree.heading("avg_contrast", text="Ср. контраст")
         self.cameras_tree.heading("avg_saturation", text="Ср. насыщ.")
         self.cameras_tree.heading("avg_exposure", text="Ср. экспоз.")
+        self.cameras_tree.heading("avg_delta_e", text="Ср. ΔE (Цвет)")
         self.cameras_tree.heading("dxo_score", text="DxOMark")
         
-        # Ширина колонок
-        self.cameras_tree.column("camera", width=250)
-        self.cameras_tree.column("count", width=80)
-        self.cameras_tree.column("avg_overall", width=80)
-        self.cameras_tree.column("avg_sharpness", width=80)
-        self.cameras_tree.column("avg_noise", width=80)
-        self.cameras_tree.column("avg_dynamic_range", width=80)
-        self.cameras_tree.column("avg_brightness", width=80)
-        self.cameras_tree.column("avg_contrast", width=80)
-        self.cameras_tree.column("avg_saturation", width=80)
-        self.cameras_tree.column("avg_exposure", width=80)
-        self.cameras_tree.column("dxo_score", width=80)
+        # Ширина и выравнивание колонок (Для чисел ставим center, для модели — left)
+        self.cameras_tree.column("camera", width=220, anchor="w")
+        self.cameras_tree.column("count", width=80, anchor="center")
+        self.cameras_tree.column("avg_overall", width=80, anchor="center")
+        self.cameras_tree.column("avg_sharpness", width=80, anchor="center")
+        self.cameras_tree.column("avg_noise", width=80, anchor="center")
+        self.cameras_tree.column("avg_dynamic_range", width=80, anchor="center")
+        self.cameras_tree.column("avg_brightness", width=80, anchor="center")
+        self.cameras_tree.column("avg_contrast", width=80, anchor="center")
+        self.cameras_tree.column("avg_saturation", width=80, anchor="center")
+        self.cameras_tree.column("avg_exposure", width=80, anchor="center")
+        self.cameras_tree.column("avg_delta_e", width=85, anchor="center")
+        self.cameras_tree.column("dxo_score", width=80, anchor="center")
         
         # Скроллбары
-        scrollbar_y = ttk.Scrollbar(self.history_cameras_tab, orient="vertical", command=self.cameras_tree.yview)
+        scrollbar_y = ttk.Scrollbar(table_frame, orient="vertical", command=self.cameras_tree.yview)
         scrollbar_x = ttk.Scrollbar(self.history_cameras_tab, orient="horizontal", command=self.cameras_tree.xview)
         self.cameras_tree.configure(yscrollcommand=scrollbar_y.set, xscrollcommand=scrollbar_x.set)
         
-        self.cameras_tree.pack(side="left", fill="both", expand=True, padx=5, pady=5)
-        scrollbar_y.pack(side="right", fill="y", padx=5, pady=5)
-        scrollbar_x.pack(side="bottom", fill="x", padx=5, pady=5)
+        # Правильная упаковка элементов интерфейса
+        scrollbar_y.pack(side="right", fill="y")
+        self.cameras_tree.pack(side="left", fill="both", expand=True)
+        scrollbar_x.pack(side="top", fill="x", padx=5)
         
         # Кнопки
         btn_frame = ctk.CTkFrame(self.history_cameras_tab)
-        btn_frame.pack(pady=5)
+        btn_frame.pack(side="bottom", pady=10)
         
         ctk.CTkButton(
             btn_frame,
             text="Обновить",
             command=self.load_cameras_analysis,
-            width=80,
+            width=120,
             fg_color="#3498db",
             hover_color="#2980b9"
         ).pack(side="left", padx=5)
-        
-        # ctk.CTkButton(
-        #     btn_frame,
-        #     text="Показать сравнение",
-        #     command=self.show_cameras_comparison,
-        #     width=200,
-        #     fg_color="#2ecc71",
-        #     hover_color="#27ae60"
-        # ).pack(side="left", padx=5)
-    
+
     def load_cameras_analysis(self):
         """Загрузка агрегированного анализа по камерам"""
         if not hasattr(self, 'cameras_tree') or not self.cameras_tree:
             return
         
+        # Очищаем старые строки
         for item in self.cameras_tree.get_children():
             self.cameras_tree.delete(item)
         
@@ -729,8 +728,6 @@ class PhotoQualityAnalyzerApp:
         
         try:
             analyses = self.db.get_all_analyses(limit=1000)
-            
-            # Группируем по камерам
             cameras_data = {}
             
             for analysis in analyses:
@@ -741,131 +738,249 @@ class PhotoQualityAnalyzerApp:
                 if camera not in cameras_data:
                     cameras_data[camera] = {
                         'count': 0,
-                        'overall_sum': 0,
-                        'sharpness_sum': 0,
-                        'noise_sum': 0,
-                        'dynamic_range_sum': 0,
-                        'brightness_sum': 0,
-                        'contrast_sum': 0,
-                        'saturation_sum': 0,
-                        'exposure_sum': 0,
+                        'overall_sum': 0, 'sharpness_sum': 0, 'noise_sum': 0, 'dynamic_range_sum': 0,
+                        'brightness_sum': 0, 'contrast_sum': 0, 'saturation_sum': 0, 'exposure_sum': 0,
+                        'deltaE_sum': 0,
+                        'overall_count': 0, 'sharpness_count': 0, 'noise_count': 0, 'dynamic_range_count': 0,
+                        'brightness_count': 0, 'contrast_count': 0, 'saturation_count': 0, 'exposure_count': 0,
+                        'deltaE_count': 0,
                         'dxo_score': analysis.get('dxomark_score')
                     }
                 
                 data = cameras_data[camera]
                 data['count'] += 1
                 
-                # Функция безопасного сложения
-                def safe_add(val, sum_val):
+                def process_metric(val, sum_key, count_key, multiplier=1.0):
                     if val is not None and val != 'N/A':
                         try:
-                            return sum_val + float(val)
+                            data[sum_key] += float(val) * multiplier
+                            data[count_key] += 1
                         except (ValueError, TypeError):
-                            return sum_val
-                    return sum_val
+                            pass
+
+                process_metric(analysis.get('overall_score'), 'overall_sum', 'overall_count')
+                process_metric(analysis.get('sharpness_score'), 'sharpness_sum', 'sharpness_count')
+                process_metric(analysis.get('noise_level'), 'noise_sum', 'noise_count')
+                process_metric(analysis.get('dynamic_range'), 'dynamic_range_sum', 'dynamic_range_count')
+                process_metric(analysis.get('deltaE'), 'deltaE_sum', 'deltaE_count')
                 
-                data['overall_sum'] = safe_add(analysis.get('overall_score'), data['overall_sum'])
-                data['sharpness_sum'] = safe_add(analysis.get('sharpness_score'), data['sharpness_sum'])
-                data['noise_sum'] = safe_add(analysis.get('noise_level'), data['noise_sum'])
-                data['dynamic_range_sum'] = safe_add(analysis.get('dynamic_range'), data['dynamic_range_sum'])
+                process_metric(analysis.get('brightness'), 'brightness_sum', 'brightness_count', 100.0)
+                process_metric(analysis.get('contrast'), 'contrast_sum', 'contrast_count', 100.0)
+                process_metric(analysis.get('saturation'), 'saturation_sum', 'saturation_count', 100.0)
+                process_metric(analysis.get('exposure_score'), 'exposure_sum', 'exposure_count', 100.0)
                 
-                # Процентные метрики
-                brightness = analysis.get('brightness')
-                if brightness and brightness != 'N/A':
-                    try:
-                        data['brightness_sum'] += float(brightness) * 100
-                    except (ValueError, TypeError):
-                        pass
-                
-                contrast = analysis.get('contrast')
-                if contrast and contrast != 'N/A':
-                    try:
-                        data['contrast_sum'] += float(contrast) * 100
-                    except (ValueError, TypeError):
-                        pass
-                
-                saturation = analysis.get('saturation')
-                if saturation and saturation != 'N/A':
-                    try:
-                        data['saturation_sum'] += float(saturation) * 100
-                    except (ValueError, TypeError):
-                        pass
-                
-                exposure = analysis.get('exposure_score')
-                if exposure and exposure != 'N/A':
-                    try:
-                        data['exposure_sum'] += float(exposure) * 100
-                    except (ValueError, TypeError):
-                        pass
-                
-                # DxOMark
                 dxo = analysis.get('dxomark_score')
                 if dxo and dxo != 'N/A' and dxo is not None:
-                    try:
-                        data['dxo_score'] = dxo
-                    except:
-                        pass
+                    data['dxo_score'] = dxo
             
-            # Заполняем таблицу
+            # Рендерим строки
             for camera, data in sorted(cameras_data.items(), key=lambda x: x[1]['count'], reverse=True):
-                count = data['count']
+                def get_avg_str(sum_val, count_val, suffix=""):
+                    if count_val > 0:
+                        return f"{sum_val / count_val:.1f}{suffix}"
+                    return "-"
+
+                avg_overall_num = data['overall_sum'] / data['overall_count'] if data['overall_count'] > 0 else 0
                 
-                avg_overall = data['overall_sum'] / count if data['overall_sum'] > 0 else 0
-                avg_sharpness = data['sharpness_sum'] / count if data['sharpness_sum'] > 0 else 0
-                avg_noise = data['noise_sum'] / count if data['noise_sum'] > 0 else 0
-                avg_dr = data['dynamic_range_sum'] / count if data['dynamic_range_sum'] > 0 else 0
-                avg_brightness = data['brightness_sum'] / count if data['brightness_sum'] > 0 else 0
-                avg_contrast = data['contrast_sum'] / count if data['contrast_sum'] > 0 else 0
-                avg_saturation = data['saturation_sum'] / count if data['saturation_sum'] > 0 else 0
-                avg_exposure = data['exposure_sum'] / count if data['exposure_sum'] > 0 else 0
+                avg_overall = get_avg_str(data['overall_sum'], data['overall_count'], "%")
+                avg_sharpness = get_avg_str(data['sharpness_sum'], data['sharpness_count'])
+                avg_noise = get_avg_str(data['noise_sum'], data['noise_count'])
+                avg_dr = get_avg_str(data['dynamic_range_sum'], data['dynamic_range_count'], " EV")
+                avg_brightness = get_avg_str(data['brightness_sum'], data['brightness_count'], "%")
+                avg_contrast = get_avg_str(data['contrast_sum'], data['contrast_count'], "%")
+                avg_saturation = get_avg_str(data['saturation_sum'], data['saturation_count'], "%")
+                avg_exposure = get_avg_str(data['exposure_sum'], data['exposure_count'], "%")
+                avg_deltaE = get_avg_str(data['deltaE_sum'], data['deltaE_count'], " dE")
                 
                 dxo = data['dxo_score'] if data['dxo_score'] else '-'
                 
-                # Цветовая индикация
-                if avg_overall >= 80:
-                    color_icon = "🟢"
-                elif avg_overall >= 60:
-                    color_icon = "🔵"
-                elif avg_overall >= 40:
-                    color_icon = "🟡"
+                if data['overall_count'] > 0:
+                    if avg_overall_num >= 80: color_icon = "🟢"
+                    elif avg_overall_num >= 60: color_icon = "🔵"
+                    elif avg_overall_num >= 40: color_icon = "🟡"
+                    else: color_icon = "🔴"
                 else:
-                    color_icon = "🔴"
+                    color_icon = "⚪"
                 
+                # Здесь порядок вывода полностью синхронизирован с columns таблицы!
                 self.cameras_tree.insert("", "end", values=(
                     f"{color_icon} {camera}",
-                    count,
-                    f"{avg_overall:.1f}%",
-                    f"{avg_sharpness:.1f}",
-                    f"{avg_noise:.1f}",
-                    f"{avg_dr:.1f} EV",
-                    f"{avg_brightness:.1f}%",
-                    f"{avg_contrast:.1f}%",
-                    f"{avg_saturation:.1f}%",
-                    f"{avg_exposure:.1f}%",
+                    data['count'],
+                    avg_overall,
+                    avg_sharpness,
+                    avg_noise,
+                    avg_dr,
+                    avg_brightness,
+                    avg_contrast,
+                    avg_saturation,
+                    avg_exposure,
+                    avg_deltaE,  # Строго перед dxo
                     dxo
                 ))
             
-            # Добавляем итоговую строку
+            # Рассчитываем строку ИТОГО
             if len(cameras_data) > 1:
                 total_count = sum(d['count'] for d in cameras_data.values())
-                total_overall = sum(d['overall_sum'] for d in cameras_data.values()) / total_count if total_count > 0 else 0
+                
+                t_overall_sum = sum(d['overall_sum'] for d in cameras_data.values())
+                t_overall_count = sum(d['overall_count'] for d in cameras_data.values())
+                total_overall = f"{t_overall_sum / t_overall_count:.1f}%" if t_overall_count > 0 else "-"
+                
+                t_deltaE_sum = sum(d['deltaE_sum'] for d in cameras_data.values())
+                t_deltaE_count = sum(d['deltaE_count'] for d in cameras_data.values())
+                total_deltaE = f"{t_deltaE_sum / t_deltaE_count:.1f} dE" if t_deltaE_count > 0 else "-"
                 
                 self.cameras_tree.insert("", "end", values=(
                     "ИТОГО ПО ВСЕМ КАМЕРАМ",
                     total_count,
-                    f"{total_overall:.1f}%",
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
+                    total_overall,
+                    "", "", "", "", "", "", "", 
+                    total_deltaE,  # Выводим общее среднее deltaE
                     ""
                 ))
             
         except Exception as e:
             print(f"Ошибка загрузки анализа камер: {e}")
+
+    # def load_cameras_analysis(self):
+    #     """Загрузка агрегированного анализа по камерам"""
+    #     if not hasattr(self, 'cameras_tree') or not self.cameras_tree:
+    #         return
+        
+    #     for item in self.cameras_tree.get_children():
+    #         self.cameras_tree.delete(item)
+        
+    #     if not self.db:
+    #         return
+        
+    #     try:
+    #         analyses = self.db.get_all_analyses(limit=1000)
+            
+    #         # Группируем по камерам
+    #         cameras_data = {}
+            
+    #         for analysis in analyses:
+    #             camera = analysis.get('camera_model')
+    #             if not camera or camera == 'Unknown':
+    #                 camera = "Неизвестная камера"
+                
+    #             if camera not in cameras_data:
+    #                 cameras_data[camera] = {
+    #                     'count': 0, # Общий счетчик файлов для sorting
+    #                     # Суммы метрик
+    #                     'overall_sum': 0, 'sharpness_sum': 0, 'noise_sum': 0, 'dynamic_range_sum': 0,
+    #                     'brightness_sum': 0, 'contrast_sum': 0, 'saturation_sum': 0, 'exposure_sum': 0,
+    #                     'deltaE_sum': 0, # <-- Добавили сумму для deltaE
+    #                     # Индивидуальные счетчики валидных (не None) значений
+    #                     'overall_count': 0, 'sharpness_count': 0, 'noise_count': 0, 'dynamic_range_count': 0,
+    #                     'brightness_count': 0, 'contrast_count': 0, 'saturation_count': 0, 'exposure_count': 0,
+    #                     'deltaE_count': 0, # <-- Добавили счетчик для deltaE
+    #                     'dxo_score': analysis.get('dxomark_score')
+    #                 }
+                
+    #             data = cameras_data[camera]
+    #             data['count'] += 1
+                
+    #             # Вспомогательный метод для безопасного подсчета числовых метрик
+    #             def process_metric(val, sum_key, count_key, multiplier=1.0):
+    #                 if val is not None and val != 'N/A':
+    #                     try:
+    #                         data[sum_key] += float(val) * multiplier
+    #                         data[count_key] += 1
+    #                     except (ValueError, TypeError):
+    #                         pass
+
+    #             # Счет стандартных метрик
+    #             process_metric(analysis.get('overall_score'), 'overall_sum', 'overall_count')
+    #             process_metric(analysis.get('sharpness_score'), 'sharpness_sum', 'sharpness_count')
+    #             process_metric(analysis.get('noise_level'), 'noise_sum', 'noise_count')
+    #             process_metric(analysis.get('dynamic_range'), 'dynamic_range_sum', 'dynamic_range_count')
+    #             process_metric(analysis.get('deltaE'), 'deltaE_sum', 'deltaE_count') # <-- Считаем deltaE
+                
+    #             # Процентные метрики (с множителем 100)
+    #             process_metric(analysis.get('brightness'), 'brightness_sum', 'brightness_count', 100.0)
+    #             process_metric(analysis.get('contrast'), 'contrast_sum', 'contrast_count', 100.0)
+    #             process_metric(analysis.get('saturation'), 'saturation_sum', 'saturation_count', 100.0)
+    #             process_metric(analysis.get('exposure_score'), 'exposure_sum', 'exposure_count', 100.0)
+                
+    #             # DxOMark
+    #             dxo = analysis.get('dxomark_score')
+    #             if dxo and dxo != 'N/A' and dxo is not None:
+    #                 data['dxo_score'] = dxo
+            
+    #         # Заполняем таблицу
+    #         for camera, data in sorted(cameras_data.items(), key=lambda x: x[1]['count'], reverse=True):
+    #             # Функция безопасного деления: если живых данных нет, выводим прочерк '-'
+    #             def get_avg_str(sum_val, count_val, suffix=""):
+    #                 if count_val > 0:
+    #                     return f"{sum_val / count_val:.1f}{suffix}"
+    #                 return "-"
+
+    #             avg_overall_num = data['overall_sum'] / data['overall_count'] if data['overall_count'] > 0 else 0
+                
+    #             avg_overall = get_avg_str(data['overall_sum'], data['overall_count'], "%")
+    #             avg_sharpness = get_avg_str(data['sharpness_sum'], data['sharpness_count'])
+    #             avg_noise = get_avg_str(data['noise_sum'], data['noise_count'])
+    #             avg_dr = get_avg_str(data['dynamic_range_sum'], data['dynamic_range_count'], " EV")
+    #             avg_brightness = get_avg_str(data['brightness_sum'], data['brightness_count'], "%")
+    #             avg_contrast = get_avg_str(data['contrast_sum'], data['contrast_count'], "%")
+    #             avg_saturation = get_avg_str(data['saturation_sum'], data['saturation_count'], "%")
+    #             avg_exposure = get_avg_str(data['exposure_sum'], data['exposure_count'], "%")
+    #             avg_deltaE = get_avg_str(data['deltaE_sum'], data['deltaE_count'], " dE") # <-- Получаем строку для deltaE
+                
+    #             dxo = data['dxo_score'] if data['dxo_score'] else '-'
+                
+    #             # Цветовая индикация (смотрим только если были реальные оценки)
+    #             if data['overall_count'] > 0:
+    #                 if avg_overall_num >= 80: color_icon = "🟢"
+    #                 elif avg_overall_num >= 60: color_icon = "🔵"
+    #                 elif avg_overall_num >= 40: color_icon = "🟡"
+    #                 else: color_icon = "🔴"
+    #             else:
+    #                 color_icon = "⚪" # Серый значок для камер без оценок вообще
+                
+    #             # Примечание: Убедитесь, что порядок вывода колонок в values 
+    #             # строго соответствует настройке вашего self.cameras_tree["columns"]!
+    #             # Я поставил avg_deltaE перед dxo, поправьте, если колонка стоит в другом месте.
+    #             self.cameras_tree.insert("", "end", values=(
+    #                 f"{color_icon} {camera}",
+    #                 data['count'],
+    #                 avg_overall,
+    #                 avg_sharpness,
+    #                 avg_noise,
+    #                 avg_dr,
+    #                 avg_brightness,
+    #                 avg_contrast,
+    #                 avg_saturation,
+    #                 avg_exposure,
+    #                 avg_deltaE, # <-- Передаем в таблицу
+    #                 dxo
+    #             ))
+            
+    #         # Добавляем итоговую строку
+    #         if len(cameras_data) > 1:
+    #             total_count = sum(d['count'] for d in cameras_data.values())
+                
+    #             t_overall_sum = sum(d['overall_sum'] for d in cameras_data.values())
+    #             t_overall_count = sum(d['overall_count'] for d in cameras_data.values())
+    #             total_overall = f"{t_overall_sum / t_overall_count:.1f}%" if t_overall_count > 0 else "-"
+                
+    #             # Считаем общее среднее deltaE для строки ИТОГО
+    #             t_deltaE_sum = sum(d['deltaE_sum'] for d in cameras_data.values())
+    #             t_deltaE_count = sum(d['deltaE_count'] for d in cameras_data.values())
+    #             total_deltaE = f"{t_deltaE_sum / t_deltaE_count:.1f} dE" if t_deltaE_count > 0 else "-"
+                
+    #             self.cameras_tree.insert("", "end", values=(
+    #                 "ИТОГО ПО ВСЕМ КАМЕРАМ",
+    #                 total_count,
+    #                 total_overall,
+    #                 "", "", "", "", "", "", "", 
+    #                 total_deltaE, # <-- Выводим общее deltaE в итоговую строку
+    #                 ""
+    #             ))
+            
+    #     except Exception as e:
+    #         print(f"Ошибка загрузки анализа камер: {e}")
     
     def show_cameras_comparison(self):
         """Показывает окно сравнения камер"""
@@ -2021,14 +2136,14 @@ class PhotoQualityAnalyzerApp:
                         return v
                     return default
                 
-                overall = get_val('overall_score')
-                sharpness = get_val('sharpness_score')
-                noise = get_val('noise_level')
-                dr = get_val('dynamic_range')
-                brightness = get_val('brightness', is_percent=True)
-                contrast = get_val('contrast', is_percent=True)
-                saturation = get_val('saturation', is_percent=True)
-                exposure = get_val('exposure_score', is_percent=True)
+                overall = get_val('overall_score') or '-'
+                sharpness = get_val('sharpness_score') or '-'
+                noise = get_val('noise_level') or '-'
+                dr = get_val('dynamic_range') or '-'
+                brightness = get_val('brightness', is_percent=True) or '-'
+                contrast = get_val('contrast', is_percent=True) or '-'
+                saturation = get_val('saturation', is_percent=True) or '-'
+                exposure = get_val('exposure_score', is_percent=True) or '-'
                 camera = (analysis.get('camera_model') or '-')[:25]
                 dxo = analysis.get('dxomark_score') or '-'
                 deltaE = analysis.get('deltaE') or '-'
