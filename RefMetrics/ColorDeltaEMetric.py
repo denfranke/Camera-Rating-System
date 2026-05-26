@@ -2,6 +2,7 @@ import os
 import cv2
 import numpy as np
 import random
+import rawpy
 from PIL import Image, ImageDraw
 import customtkinter as ctk
 from .base import BaseReferenceMetric

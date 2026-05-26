@@ -51,7 +51,7 @@ class BaseReferenceMetric(ABC):
         """Метод САМ открывает диалог выбора файла, ни от кого не завися"""
         selected_path = filedialog.askopenfilename(
             title=f"Загрузка отсканированной мишени для: {self.name}",
-            filetypes=[("Изображения", "*.png *.jpg *.jpeg *.bmp *.tiff *.JPG *.PNG")]
+            filetypes=[("Изображения", "*.png *.jpg *.jpeg *.bmp *.tiff *.JPG *.PNG *.dng *.DNG")]
         )
         if not selected_path:
             return
